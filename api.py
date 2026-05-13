@@ -9,7 +9,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://ages-breaking-portal-fathers.trycloudflare.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -18,13 +18,6 @@ app.add_middleware(
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/results")
-def get_results():
-    df = pd.read_csv("datas/출동결과.csv", encoding="utf-8-sig")
-    return JSONResponse(content=df.to_dict(orient="records"))
-
 
 @app.post("/optimize")
 async def optimize(

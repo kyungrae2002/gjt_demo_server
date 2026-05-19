@@ -34,12 +34,12 @@ app.add_middleware(
 # ==========================================
 class ProductCreate(BaseModel):
     제품이름: str
-    품목명: str
+    자산번호: str
     필요인원수: int
 
 class ProductUpdate(BaseModel):
     제품이름: Optional[str] = None
-    품목명: Optional[str] = None
+    자산번호: Optional[str] = None
     필요인원수: Optional[int] = None
 
 class ImportRequest(BaseModel):
@@ -87,7 +87,7 @@ def get_products(db: Session = Depends(get_db)):
         {
             "id":         p.id,
             "제품이름":   p.제품이름,
-            "품목명":     p.품목명,
+            "자산번호":     p.자산번호,
             "필요인원수": p.필요인원수,
         }
         for p in products
@@ -101,32 +101,32 @@ def get_products(db: Session = Depends(get_db)):
 def create_product(body: ProductCreate, db: Session = Depends(get_db)):
     product = Product(
         제품이름=body.제품이름,
-        품목명=body.품목명,
+        자산번호=body.자산번호,
         필요인원수=body.필요인원수,
     )
     db.add(product)
     db.commit()
     db.refresh(product)
-    return {"id": product.id, "제품이름": product.제품이름, "품목명": product.품목명, "필요인원수": product.필요인원수}
+    return {"id": product.id, "제품이름": product.제품이름, "자산번호": product.자산번호, "필요인원수": product.필요인원수}
 
 
 # ==========================================
 # 제품 수정
 # ==========================================
-@app.put("/products/{product_id}")
-def update_product(product_id: int, body: ProductUpdate, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+@app.put("/products/{serialnumber}")
+def update_product(serialnumber: str, body: ProductUpdate, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.자산번호 == serialnumber).first()
     if not product:
         raise HTTPException(status_code=404, detail="제품을 찾을 수 없습니다.")
     if body.제품이름 is not None:
         product.제품이름 = body.제품이름
-    if body.품목명 is not None:
-        product.품목명 = body.품목명
+    if body.자산번호 is not None:
+        product.자산번호 = body.자산번호
     if body.필요인원수 is not None:
         product.필요인원수 = body.필요인원수
     db.commit()
     db.refresh(product)
-    return {"id": product.id, "제품이름": product.제품이름, "품목명": product.품목명, "필요인원수": product.필요인원수}
+    return {"id": product.id, "제품이름": product.제품이름, "자산번호": product.자산번호, "필요인원수": product.필요인원수}
 
 
 # ==========================================
@@ -146,12 +146,12 @@ def import_products_from_s3(body: ImportRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"S3 파일 읽기 실패: {e}")
 
-    required_cols = {"제품이름", "품목명", "필요인원수"}
+    required_cols = {"제품이름", "자산번호", "필요인원수"}
     if not required_cols.issubset(df.columns):
         raise HTTPException(status_code=400, detail=f"CSV 필수 컬럼 없음: {required_cols - set(df.columns)}")
 
     records = [
-        Product(제품이름=row["제품이름"], 품목명=row["품목명"], 필요인원수=int(row["필요인원수"]))
+        Product(제품이름=row["제품이름"], 자산번호=row["자산번호"], 필요인원수=int(row["필요인원수"]))
         for _, row in df.iterrows()
     ]
     db.bulk_save_objects(records)

@@ -1,12 +1,14 @@
 import io
 import os
+import yaml
 import pandas as pd
 import boto3
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 from model import run_optimizer
@@ -15,7 +17,7 @@ from models import Product
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(docs_url=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +34,18 @@ app.add_middleware(
 # ==========================================
 # Pydantic 스키마
 # ==========================================
+class OptimizeItem(BaseModel):
+    품명: str
+    설치장소: str
+    수량: int
+    필요인원수: int
+
+class OptimizeRequest(BaseModel):
+    신청번호: str
+    신청일자: str
+    신청부서: str
+    물품목록: List[OptimizeItem]
+
 class ProductCreate(BaseModel):
     제품이름: str
     자산번호: str
@@ -55,21 +69,46 @@ def health():
 
 
 # ==========================================
+# OpenAPI YAML 명세서 + 커스텀 Swagger UI
+# ==========================================
+@app.get("/openapi.yaml", include_in_schema=False)
+def openapi_yaml():
+    return Response(
+        content=yaml.dump(app.openapi(), allow_unicode=True, sort_keys=False),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": "attachment; filename=openapi.yaml"},
+    )
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui():
+    html = get_swagger_ui_html(openapi_url="/openapi.json", title="API Docs")
+    download_btn = (
+        '<a href="/openapi.yaml" download '
+        'style="position:fixed;top:14px;right:16px;z-index:9999;'
+        'background:#49cc90;color:white;padding:8px 18px;'
+        'border-radius:4px;text-decoration:none;font-weight:bold;font-size:14px;">'
+        'YAML 다운로드</a>'
+    )
+    body = html.body.decode().replace("</body>", f"{download_btn}</body>")
+    return HTMLResponse(content=body)
+
+
+# ==========================================
 # 최적화
 # ==========================================
 @app.post("/optimize")
-async def optimize(data: List[Dict[str, Any]]):
+async def optimize(data: List[OptimizeRequest]):
     rows = []
     for req in data:
-        for item in req["물품목록"]:
+        for item in req.물품목록:
             rows.append({
-                "신청번호":   req["신청번호"],
-                "신청일자":   req["신청일자"],
-                "신청부서":   req["신청부서"],
-                "품명":       item["품명"],
-                "설치장소":   item["설치장소"],
-                "수량":       item["수량"],
-                "필요인원수": item["필요인원수"],
+                "신청번호":   req.신청번호,
+                "신청일자":   req.신청일자,
+                "신청부서":   req.신청부서,
+                "품명":       item.품명,
+                "설치장소":   item.설치장소,
+                "수량":       item.수량,
+                "필요인원수": item.필요인원수,
             })
     df       = pd.DataFrame(rows)
     df_avail = pd.read_csv("datas/근로학생시간.csv")
@@ -81,13 +120,13 @@ async def optimize(data: List[Dict[str, Any]]):
 # 제품 조회
 # ==========================================
 @app.get("/products")
-def get_products(db: Session = Depends(get_db)):
-    products = db.query(Product).all()
+def get_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    products = db.query(Product).offset(skip).limit(limit).all()
     return [
         {
             "id":         p.id,
             "제품이름":   p.제품이름,
-            "자산번호":     p.자산번호,
+            "자산번호":   p.자산번호,
             "필요인원수": p.필요인원수,
         }
         for p in products
@@ -113,7 +152,7 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db)):
 # ==========================================
 # 제품 수정
 # ==========================================
-@app.put("/products/{serialnumber}")
+@app.patch("/products/{serialnumber}")
 def update_product(serialnumber: str, body: ProductUpdate, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.자산번호 == serialnumber).first()
     if not product:

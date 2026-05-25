@@ -15,7 +15,10 @@ from model import run_optimizer
 from db import get_db, engine, Base
 from models import Product
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[경고] DB 연결 실패, 테이블 생성 건너뜀: {e}")
 
 app = FastAPI(docs_url=None)
 

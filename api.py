@@ -51,12 +51,10 @@ class OptimizeRequest(BaseModel):
 
 class ProductCreate(BaseModel):
     품명: str
-    자산번호: str
     필요인원수: int
 
 class ProductUpdate(BaseModel):
     품명: Optional[str] = None
-    자산번호: Optional[str] = None
     필요인원수: Optional[int] = None
 
 class ImportRequest(BaseModel):
@@ -129,7 +127,6 @@ def get_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db))
         {
             "id":         p.id,
             "품명":       p.품명,
-            "자산번호":   p.자산번호,
             "필요인원수": p.필요인원수,
         }
         for p in products
@@ -154,32 +151,29 @@ def get_workers(품명: str, db: Session = Depends(get_db)):
 def create_product(body: ProductCreate, db: Session = Depends(get_db)):
     product = Product(
         품명=body.품명,
-        자산번호=body.자산번호,
         필요인원수=body.필요인원수,
     )
     db.add(product)
     db.commit()
     db.refresh(product)
-    return {"id": product.id, "품명": product.품명, "자산번호": product.자산번호, "필요인원수": product.필요인원수}
+    return {"id": product.id, "품명": product.품명, "필요인원수": product.필요인원수}
 
 
 # ==========================================
 # 제품 수정
 # ==========================================
-@app.patch("/products/{serialnumber}")
-def update_product(serialnumber: str, body: ProductUpdate, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.자산번호 == serialnumber).first()
+@app.patch("/products/{name}")
+def update_product(name: str, body: ProductUpdate, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.품명 == name).first()
     if not product:
         raise HTTPException(status_code=404, detail="제품을 찾을 수 없습니다.")
     if body.품명 is not None:
         product.품명 = body.품명
-    if body.자산번호 is not None:
-        product.자산번호 = body.자산번호
     if body.필요인원수 is not None:
         product.필요인원수 = body.필요인원수
     db.commit()
     db.refresh(product)
-    return {"id": product.id, "품명": product.품명, "자산번호": product.자산번호, "필요인원수": product.필요인원수}
+    return {"id": product.id, "품명": product.품명, "필요인원수": product.필요인원수}
 
 
 # ==========================================
@@ -199,12 +193,12 @@ def import_products_from_s3(body: ImportRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"S3 파일 읽기 실패: {e}")
 
-    required_cols = {"품명", "자산번호", "필요인원수"}
+    required_cols = {"품명", "필요인원수"}
     if not required_cols.issubset(df.columns):
         raise HTTPException(status_code=400, detail=f"CSV 필수 컬럼 없음: {required_cols - set(df.columns)}")
 
     records = [
-        Product(품명=row["품명"], 자산번호=row["자산번호"], 필요인원수=int(row["필요인원수"]))
+        Product(품명=row["품명"], 필요인원수=int(row["필요인원수"]))
         for _, row in df.iterrows()
     ]
     db.bulk_save_objects(records)

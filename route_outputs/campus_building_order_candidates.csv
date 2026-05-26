@@ -1,0 +1,3 @@
+﻿candidate_no,route,total_distance,is_selected
+1,창고 -> 외국어대학관 -> 공학실험동 -> 창고,2959.0,False
+2,창고 -> 공학실험동 -> 외국어대학관 -> 창고,2958.0,True

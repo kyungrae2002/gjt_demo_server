@@ -1,0 +1,7 @@
+edge_id,from_node_id,to_node_id,edge_type,length
+E1,N1,N2,walk,167.01
+E2,N2,N3,walk,176.03
+E3,N3,N4,walk,191.00
+E4,N7,N4,walk,190.07
+E5,N4,N5,walk,178.04
+E6,N5,N6,walk,171.01

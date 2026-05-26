@@ -1,0 +1,8 @@
+node_id,node_type,floor,x,y,assigned_rooms,start_node
+N1,corridor,1,84,218,101;102;109;110,
+N2,corridor,1,251,216,103;111,
+N3,corridor,1,427,213,104;105;112;113,
+N4,corridor,1,618,212,121,1
+N5,corridor,1,796,216,106;107;114;115,
+N6,corridor,1,967,218,108;116,
+N7,corridor,1,613,22,,

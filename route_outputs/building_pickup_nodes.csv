@@ -1,0 +1,5 @@
+﻿building,visit_seq,pickup_node,pickup_rooms,request_count,total_quantity,max_required_people
+공학실험동,1,N16,220,1,1.0,2.0
+공학실험동,2,N7,120,1,1.0,2.0
+외국어대학관,1,N12,124,1,2.0,1.0
+외국어대학관,2,N14,234,1,2.0,4.0

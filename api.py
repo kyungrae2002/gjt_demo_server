@@ -12,6 +12,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from model import run_optimizer
+from model2 import run_optimizer as run_route_optimizer
 from db import get_db, engine, Base
 from models import Product
 
@@ -48,6 +49,16 @@ class OptimizeRequest(BaseModel):
     신청일자: str
     신청부서: str
     물품목록: List[OptimizeItem]
+
+class RouteItem(BaseModel):
+    품명: str
+    설치장소: str
+    수량: int
+    필요인원수: int
+
+class RouteRequest(BaseModel):
+    투입인원수: Optional[int] = None
+    신청서: List[RouteItem]
 
 class ProductCreate(BaseModel):
     품명: str
@@ -114,6 +125,26 @@ async def optimize(data: List[OptimizeRequest]):
     df       = pd.DataFrame(rows)
     df_avail = pd.read_csv("datas/근로학생시간.csv")
     results  = run_optimizer(df, df_avail)
+    return JSONResponse(content=results)
+
+
+# ==========================================
+# 건물 내 수거 동선 최적화
+# ==========================================
+@app.post("/optimize/route")
+async def optimize_route(data: RouteRequest):
+    rows = []
+    for idx, item in enumerate(data.신청서, start=1):
+        rows.append({
+            "신청번호":   str(idx),
+            "품명":       item.품명,
+            "설치장소":   item.설치장소,
+            "수량":       item.수량,
+            "필요인원수": item.필요인원수,
+        })
+    df              = pd.DataFrame(rows)
+    dispatch_people = float(data.투입인원수) if data.투입인원수 is not None else None
+    results         = run_route_optimizer(df, None, dispatch_people)
     return JSONResponse(content=results)
 
 

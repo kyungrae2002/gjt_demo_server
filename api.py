@@ -133,8 +133,14 @@ async def optimize(data: List[OptimizeRequest]):
 # ==========================================
 @app.post("/optimize/route")
 async def optimize_route(data: RouteRequest):
+    if not data.신청서:
+        raise HTTPException(status_code=400, detail="신청서 목록이 비어 있습니다.")
+
     rows = []
     for idx, item in enumerate(data.신청서, start=1):
+        building = item.설치장소.split()[0] if item.설치장소 and item.설치장소.strip() else ""
+        if not building:
+            raise HTTPException(status_code=400, detail=f"신청서 {idx}번: 설치장소에서 건물명을 파악할 수 없습니다. (입력값: '{item.설치장소}')")
         rows.append({
             "신청번호":   str(idx),
             "품명":       item.품명,
@@ -142,9 +148,17 @@ async def optimize_route(data: RouteRequest):
             "수량":       item.수량,
             "필요인원수": item.필요인원수,
         })
+
     df              = pd.DataFrame(rows)
     dispatch_people = float(data.투입인원수) if data.투입인원수 is not None else None
-    results         = run_route_optimizer(df, None, dispatch_people)
+
+    try:
+        results = run_route_optimizer(df, None, dispatch_people)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"건물 그래프 파일 없음: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"최적화 실행 오류: {e}")
+
     return JSONResponse(content=results)
 
 

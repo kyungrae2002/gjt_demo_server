@@ -3,7 +3,7 @@ import os
 import yaml
 import pandas as pd
 import boto3
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -23,13 +23,38 @@ except Exception as e:
 
 app = FastAPI(docs_url=None)
 
+# 허용할 프론트엔드 출처 (CORS와 Origin 검증이 함께 사용)
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://bodies-copied-lit-namely.trycloudflare.com",
+    "https://gwanzae.vercel.app",
+]
+
+# Origin 검증을 건너뛸 경로 (브라우저 주소창에서 직접 여는 문서·헬스체크)
+ORIGIN_EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/openapi.yaml"}
+
+
+@app.middleware("http")
+async def verify_origin(request: Request, call_next):
+    # 문서·헬스체크는 브라우저에서 직접 열 수 있어야 하므로 검증 제외
+    if request.url.path in ORIGIN_EXEMPT_PATHS:
+        return await call_next(request)
+    # CORS preflight(OPTIONS)는 CORSMiddleware가 처리하도록 통과
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    # 프론트엔드(cross-origin) 요청에는 브라우저가 항상 Origin 헤더를 붙인다
+    origin = request.headers.get("origin")
+    if origin not in ALLOWED_ORIGINS:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "허용되지 않은 요청 출처입니다."},
+        )
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://bodies-copied-lit-namely.trycloudflare.com",
-        "https://gwanzae.vercel.app",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

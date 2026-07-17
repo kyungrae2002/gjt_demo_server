@@ -10,7 +10,12 @@ DATABASE_URL = (
     f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME')}"
 )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    connect_args={"sslmode": "require"},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

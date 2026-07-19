@@ -1,9 +1,10 @@
 import io
 import os
+from datetime import date
 import yaml
 import pandas as pd
 import boto3
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -15,6 +16,7 @@ from model import run_optimizer
 from model2 import run_optimizer as run_route_optimizer
 from db import get_db, engine, Base
 from models import Product
+from ocr import extract_application
 
 try:
     Base.metadata.create_all(bind=engine)
@@ -26,7 +28,7 @@ app = FastAPI(docs_url=None)
 # 허용할 프론트엔드 출처 (CORS와 Origin 검증이 함께 사용)
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://bodies-copied-lit-namely.trycloudflare.com",
+    "http://localhost:8080",
     "https://gwanzae.vercel.app",
 ]
 
@@ -151,6 +153,85 @@ async def optimize(data: List[OptimizeRequest]):
     df_avail = pd.read_csv("datas/근로학생시간.csv")
     results  = run_optimizer(df, df_avail)
     return JSONResponse(content=results)
+
+
+# ==========================================
+# 신청서 OCR → 최적화 (Amazon Textract)
+# ==========================================
+def _normalize_date(raw: Optional[str]) -> str:
+    """OCR로 읽은 날짜 문자열을 YYYY-MM-DD로 정규화. 실패 시 오늘 날짜."""
+    if raw:
+        parsed = pd.to_datetime(raw, errors="coerce")
+        if pd.notna(parsed):
+            return parsed.strftime("%Y-%m-%d")
+    return date.today().strftime("%Y-%m-%d")
+
+
+@app.post("/ocr/optimize")
+async def ocr_optimize(
+    file: UploadFile = File(...),
+    신청번호: Optional[str] = Form(None),
+    신청일자: Optional[str] = Form(None),
+    신청부서: Optional[str] = Form(None),
+    run: bool = Form(True),
+):
+    """
+    신청서 이미지(PNG/JPEG) 또는 단일 페이지 PDF를 업로드하면
+    Textract로 품목 표를 추출해 곧바로 /optimize 로직으로 넘긴다.
+
+    - 헤더 필드(신청번호/신청일자/신청부서)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
+    - run=false면 OCR 파싱 결과만 반환(최적화 미실행)해 검수에 쓸 수 있다.
+    """
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+
+    try:
+        parsed = extract_application(file_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OCR(Textract) 처리 실패: {e}")
+
+    items = parsed["items"]
+    if not items:
+        raise HTTPException(
+            status_code=422,
+            detail="신청서에서 품목 표를 인식하지 못했습니다. 표 형태/화질을 확인해 주세요.",
+        )
+
+    hdr = parsed["header"]
+    # 폼 값 > OCR 헤더 > 기본값 순으로 채운다.
+    num  = 신청번호 or hdr.get("신청번호") or "OCR-1"
+    day  = _normalize_date(신청일자 or hdr.get("신청일자"))
+    # 신청부서 미검출 시 첫 품목의 설치장소 건물명으로 대체
+    first_place = items[0]["설치장소"].strip() if items[0].get("설치장소") else ""
+    dept = 신청부서 or hdr.get("신청부서") or (first_place.split()[0] if first_place else "창고")
+
+    신청서 = {
+        "신청번호": num,
+        "신청일자": day,
+        "신청부서": dept,
+        "물품목록": items,
+    }
+
+    if not run:
+        return JSONResponse(content={"신청서": 신청서, "결과": None})
+
+    rows = [
+        {
+            "신청번호":   num,
+            "신청일자":   day,
+            "신청부서":   dept,
+            "품명":       it["품명"],
+            "설치장소":   it["설치장소"],
+            "수량":       int(it["수량"]),
+            "필요인원수": int(it["필요인원수"]),
+        }
+        for it in items
+    ]
+    df       = pd.DataFrame(rows)
+    df_avail = pd.read_csv("datas/근로학생시간.csv")
+    results  = run_optimizer(df, df_avail)
+    return JSONResponse(content={"신청서": 신청서, "결과": results})
 
 
 # ==========================================

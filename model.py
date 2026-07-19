@@ -1,3 +1,5 @@
+import os
+import platform
 import pandas as pd
 import pulp
 import numpy as np
@@ -6,6 +8,21 @@ import time
 import csv
 import random
 from collections import defaultdict
+
+
+def _get_cbc_solver(timeLimit=120, msg=0, gapRel=0.05):
+    """OS에 맞는 CBC 솔버를 반환한다.
+
+    macOS(특히 Apple Silicon)에서는 PuLP 번들 CBC가 인텔 전용 바이너리라
+    'Bad CPU type' 에러가 난다. 이때는 Homebrew로 설치한 네이티브 CBC를 쓴다.
+    Linux 서버 등에서는 번들 CBC가 정상 동작하므로 기본값을 그대로 사용한다.
+    CBC_PATH 환경변수로 경로를 직접 지정할 수도 있다.
+    """
+    if platform.system() == "Darwin":
+        cbc_path = os.getenv("CBC_PATH", "/opt/homebrew/bin/cbc")
+        if os.path.exists(cbc_path):
+            return pulp.COIN_CMD(path=cbc_path, timeLimit=timeLimit, msg=msg, gapRel=gapRel)
+    return pulp.PULP_CBC_CMD(timeLimit=timeLimit, msg=msg, gapRel=gapRel)
 
 
 def run_optimizer(df, df_avail):
@@ -295,7 +312,7 @@ def run_optimizer(df, df_avail):
     # ==========================================
     print(f"\n[START] 최적화 실행 중...")
     t0 = time.time()
-    model.solve(pulp.PULP_CBC_CMD(timeLimit=120, msg=0, gapRel=0.05))
+    model.solve(_get_cbc_solver(timeLimit=120, msg=0, gapRel=0.05))
     elapsed = time.time() - t0
 
     print(f">> 소요 시간   : {elapsed:.1f}초")

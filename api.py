@@ -1,6 +1,6 @@
 import io
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import yaml
 import pandas as pd
 import boto3
@@ -13,9 +13,9 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from model import run_optimizer
-from model2 import run_optimizer as run_route_optimizer
+from model2 import run_optimizer as run_route_optimizer, split_location_to_building_room
 from db import get_db, engine, Base
-from models import Product, Application
+from models import Product, Application, Schedule
 from ocr import extract_application
 
 try:
@@ -99,6 +99,32 @@ class ProductUpdate(BaseModel):
 class ImportRequest(BaseModel):
     s3_key: str
 
+class ApplicationItem(BaseModel):
+    품명: str
+    설치장소: Optional[str] = ""
+    수량: Optional[int] = 1
+    필요인원수: int
+
+class ApplicationPatch(BaseModel):
+    신청일자: Optional[str] = None
+    신청부서: Optional[str] = None
+    신청자: Optional[str] = None
+    연락처: Optional[str] = None
+    물품목록: Optional[List[ApplicationItem]] = None
+    점검완료: Optional[bool] = None
+
+class SchedulePatch(BaseModel):
+    출동일시: Optional[datetime] = None
+    품명: Optional[str] = None
+    설치장소: Optional[str] = None
+    신청부서: Optional[str] = None
+    수량: Optional[int] = None
+    필요인원수: Optional[int] = None
+    투입인원수: Optional[int] = None
+    가용명단: Optional[str] = None
+    출동확정: Optional[bool] = None
+    동선: Optional[dict] = None
+
 
 # ==========================================
 # 헬스체크
@@ -173,6 +199,23 @@ def _gen_application_no() -> str:
     return "OCR-" + datetime.now().strftime("%Y%m%d%H%M%S%f")
 
 
+def _unique_application_no(db: Session, base: Optional[str]) -> str:
+    """
+    신청번호를 DB에서 유니크하게 보정한다.
+    - base가 비었으면 타임스탬프 기반으로 생성.
+    - base가 이미 존재하면 -2, -3 … 접미사를 붙여 충돌을 피한다.
+    OCR로 읽은 신청번호가 부정확·중복이어도 일괄 처리가 멈추지 않게 한다.
+    """
+    base = (base or "").strip()
+    if not base:
+        base = _gen_application_no()
+    num, i = base, 2
+    while db.query(Application).filter(Application.신청번호 == num).first():
+        num = f"{base}-{i}"
+        i += 1
+    return num
+
+
 def _enrich_items_with_master(items: list, db: Session) -> list:
     """각 품목의 필요인원수를 products 마스터(품명)로 채운다. 없으면 OCR값→1."""
     enriched = []
@@ -239,16 +282,13 @@ async def create_application_from_ocr(
         )
 
     hdr = parsed["header"]
-    # 폼 값 > OCR 헤더 > 기본값 순으로 채운다.
-    num = 신청번호 or hdr.get("신청번호") or _gen_application_no()
+    # 폼 값 > OCR 헤더 순으로 신청번호 후보를 잡고, DB에서 유니크하게 보정(충돌 시 접미사).
+    num = _unique_application_no(db, 신청번호 or hdr.get("신청번호"))
     day = _normalize_date(신청일자 or hdr.get("신청일자"))
     first_place = items[0]["설치장소"].strip() if items[0].get("설치장소") else ""
     dept = 신청부서 or hdr.get("신청부서") or (first_place.split()[0] if first_place else "창고")
     applicant = 신청자 or hdr.get("신청자")
     contact = 연락처 or hdr.get("연락처")
-
-    if db.query(Application).filter(Application.신청번호 == num).first():
-        raise HTTPException(status_code=409, detail=f"이미 존재하는 신청번호입니다: {num}")
 
     app_row = Application(
         신청번호=num,
@@ -265,6 +305,289 @@ async def create_application_from_ocr(
     db.commit()
     db.refresh(app_row)
     return _application_to_dict(app_row)
+
+
+# ==========================================
+# 신청서 점검 (기본정보 + 품목별 인원수 확인·수정)
+# ==========================================
+def _upsert_product_master(db: Session, 품명: str, 필요인원수: int):
+    """products 마스터를 품명 기준으로 갱신/추가한다 (앞으로 조회부터 적용)."""
+    name = (품명 or "").strip()
+    if not name:
+        return
+    prod = db.query(Product).filter(Product.품명 == name).first()
+    if prod:
+        prod.필요인원수 = int(필요인원수)
+    else:
+        db.add(Product(품명=name, 필요인원수=int(필요인원수)))
+
+
+@app.get("/applications/{신청번호}")
+def get_application(신청번호: str, db: Session = Depends(get_db)):
+    """점검용 상세 조회: 기본정보 + 품목별 인원수."""
+    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
+    return _application_to_dict(app_row)
+
+
+@app.patch("/applications/{신청번호}")
+def update_application(신청번호: str, body: ApplicationPatch, db: Session = Depends(get_db)):
+    """
+    점검 단계: 기본정보(신청일자/신청부서/신청자/연락처)와 품목별 인원수를 수정하고
+    점검완료 처리한다.
+
+    - 물품목록의 필요인원수를 수정하면 products 마스터도 upsert(품명 기준) → 이후 신청서에 일반 적용.
+      (이미 저장된 다른 신청서 스냅샷은 소급 변경하지 않음)
+    """
+    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
+
+    if body.신청일자 is not None:
+        app_row.신청일자 = body.신청일자
+    if body.신청부서 is not None:
+        app_row.신청부서 = body.신청부서
+    if body.신청자 is not None:
+        app_row.신청자 = body.신청자
+    if body.연락처 is not None:
+        app_row.연락처 = body.연락처
+
+    if body.물품목록 is not None:
+        new_items = []
+        for it in body.물품목록:
+            new_items.append({
+                "품명":       it.품명.strip(),
+                "설치장소":   (it.설치장소 or "").strip(),
+                "수량":       int(it.수량 or 1),
+                "필요인원수": int(it.필요인원수),
+            })
+            # 인원수 수정분을 마스터에 반영 (앞으로 적용)
+            _upsert_product_master(db, it.품명, it.필요인원수)
+        app_row.물품목록 = new_items
+
+    if body.점검완료 is not None:
+        app_row.점검완료 = body.점검완료
+
+    db.commit()
+    db.refresh(app_row)
+    return _application_to_dict(app_row)
+
+
+@app.patch("/applications/{신청번호}/complete")
+def complete_application(신청번호: str, db: Session = Depends(get_db)):
+    """수거 완료 처리(상태=완료). 이후 재최적화 대상에서 제외된다."""
+    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
+    app_row.상태 = "완료"
+    db.commit()
+    db.refresh(app_row)
+    return _application_to_dict(app_row)
+
+
+# ==========================================
+# 최적화 실행 (점검완료·미완료 신청서 전체 → 일정 갱신)
+# ==========================================
+def _parse_dispatch_label(label: str):
+    """'2026-07-20 (월) 09:00' 형태 라벨 → datetime. 실패 시 None."""
+    try:
+        parts = label.split()
+        return datetime.strptime(f"{parts[0]} {parts[-1]}", "%Y-%m-%d %H:%M")
+    except Exception:
+        return None
+
+
+@app.post("/optimize/run")
+def optimize_run(db: Session = Depends(get_db)):
+    """
+    점검완료(점검완료=true)이고 아직 완료되지 않은 신청서 전체를 합쳐 재최적화한다.
+    기존 일정(schedules)은 폐기하고 새로 작성하며, 배정된 신청서는 상태=일정확정으로 바꾼다.
+    """
+    apps = (
+        db.query(Application)
+        .filter(Application.점검완료 == True, Application.상태 != "완료")
+        .all()
+    )
+    if not apps:
+        raise HTTPException(status_code=400, detail="최적화할 (점검완료·미완료) 신청서가 없습니다.")
+
+    rows = []
+    for a in apps:
+        for it in (a.물품목록 or []):
+            rows.append({
+                "신청번호":   a.신청번호,
+                "신청일자":   a.신청일자,
+                "신청부서":   a.신청부서,
+                "품명":       it.get("품명", ""),
+                "설치장소":   it.get("설치장소", ""),
+                "수량":       int(it.get("수량") or 1),
+                "필요인원수": int(it.get("필요인원수") or 1),
+            })
+
+    df       = pd.DataFrame(rows)
+    df_avail = pd.read_csv("datas/근로학생시간.csv")
+    try:
+        results = run_optimizer(df, df_avail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"최적화 실행 오류: {e}")
+
+    신청번호s = [a.신청번호 for a in apps]
+    # 기존 일정 폐기 후 재작성 (충돌 해소)
+    db.query(Schedule).filter(Schedule.신청번호.in_(신청번호s)).delete(synchronize_session=False)
+
+    run_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    for r in results:
+        db.add(Schedule(
+            신청번호=r["신청번호"],
+            출동일시=_parse_dispatch_label(r["출동일시"]),
+            품명=r["품명"],
+            설치장소=r["설치장소"],
+            신청부서=r["신청부서"],
+            수량=int(r.get("수량") or 1),
+            필요인원수=int(r.get("필요인원수") or 1),
+            optimize_run_id=run_id,
+            출동확정=False,
+        ))
+
+    # 실제 배정된 신청서만 일정확정 처리 (슬롯 못 잡은 건 접수 상태 유지)
+    scheduled_nums = {r["신청번호"] for r in results}
+    for a in apps:
+        if a.신청번호 in scheduled_nums:
+            a.상태 = "일정확정"
+
+    db.commit()
+    return {
+        "optimize_run_id": run_id,
+        "대상_신청서수":   len(apps),
+        "일정확정_신청서": sorted(scheduled_nums),
+        "일정_행수":       len(results),
+    }
+
+
+# ==========================================
+# 조회 (신청서 목록 / 오늘 출동 일정)
+# ==========================================
+def _schedule_to_dict(s: Schedule) -> dict:
+    return {
+        "id":              s.id,
+        "신청번호":        s.신청번호,
+        "출동일시":        s.출동일시,
+        "품명":            s.품명,
+        "설치장소":        s.설치장소,
+        "신청부서":        s.신청부서,
+        "수량":            s.수량,
+        "필요인원수":      s.필요인원수,
+        "투입인원수":      s.투입인원수,
+        "가용명단":        s.가용명단,
+        "출동확정":        s.출동확정,
+        "동선":            s.동선,
+        "optimize_run_id": s.optimize_run_id,
+    }
+
+
+@app.get("/applications")
+def list_applications(상태: Optional[str] = None, db: Session = Depends(get_db)):
+    """신청서 목록을 '처리해야 할 순서'(배정된 출동일시 오름차순)로 반환. 미배정은 뒤로."""
+    from sqlalchemy import func as safunc
+
+    q = db.query(Application)
+    if 상태:
+        q = q.filter(Application.상태 == 상태)
+    apps = q.all()
+
+    # 신청번호별 최초 출동일시
+    dispatch = dict(
+        db.query(Schedule.신청번호, safunc.min(Schedule.출동일시))
+        .group_by(Schedule.신청번호)
+        .all()
+    )
+
+    result = []
+    for a in apps:
+        d = _application_to_dict(a)
+        d["출동일시"] = dispatch.get(a.신청번호)
+        result.append(d)
+
+    result.sort(key=lambda x: (x["출동일시"] is None, x["출동일시"] or datetime.max))
+    return result
+
+
+@app.get("/schedules/today")
+def schedules_today(db: Session = Depends(get_db)):
+    """오늘(출동일시 기준) 수거 일정. 시간대별 렌더링은 프론트에서."""
+    today = date.today()
+    start = datetime(today.year, today.month, today.day)
+    end   = start + timedelta(days=1)
+    rows = (
+        db.query(Schedule)
+        .filter(Schedule.출동일시 >= start, Schedule.출동일시 < end)
+        .order_by(Schedule.출동일시)
+        .all()
+    )
+    return [_schedule_to_dict(s) for s in rows]
+
+
+# ==========================================
+# 오늘 출동 확정 (건물별 동선 계산·저장) + 일정 수정
+# ==========================================
+@app.post("/dispatch/confirm")
+def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    오늘 출동 일정을 확정한다. 건물별 실내 수거 동선(model2)을 계산해 각 일정에 저장하고
+    출동확정=true로 표시한다. 이후 수정이 필요하면 PATCH /schedules/{id}로 갱신한다.
+    """
+    today = date.today()
+    start = datetime(today.year, today.month, today.day)
+    end   = start + timedelta(days=1)
+    rows = (
+        db.query(Schedule)
+        .filter(Schedule.출동일시 >= start, Schedule.출동일시 < end)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=400, detail="오늘 출동할 일정이 없습니다.")
+
+    df = pd.DataFrame([{
+        "신청번호":   s.신청번호,
+        "품명":       s.품명,
+        "설치장소":   s.설치장소,
+        "수량":       s.수량,
+        "필요인원수": s.필요인원수,
+    } for s in rows])
+
+    dispatch_people = float(투입인원수) if 투입인원수 is not None else None
+    try:
+        route_results = run_route_optimizer(df, None, dispatch_people)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"건물 그래프 파일 없음: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"동선 계산 오류: {e}")
+
+    route_by_building = {r.get("건물명"): r for r in route_results}
+    for s in rows:
+        building = split_location_to_building_room(s.설치장소)[0]
+        s.동선 = route_by_building.get(building)
+        s.출동확정 = True
+    db.commit()
+
+    return {"확정_일정수": len(rows), "건물수": len(route_results), "동선": route_results}
+
+
+@app.patch("/schedules/{schedule_id}")
+def update_schedule(schedule_id: int, body: SchedulePatch, db: Session = Depends(get_db)):
+    """일정·동선 수동 수정 (변경할 필드만 보내면 됨)."""
+    s = db.query(Schedule).filter(Schedule.id == schedule_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
+    for field in ("출동일시", "품명", "설치장소", "신청부서", "수량",
+                  "필요인원수", "투입인원수", "가용명단", "출동확정", "동선"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(s, field, val)
+    db.commit()
+    db.refresh(s)
+    return _schedule_to_dict(s)
 
 
 # ==========================================

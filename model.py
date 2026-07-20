@@ -6,7 +6,6 @@ import numpy as np
 from datetime import timedelta
 import time
 import csv
-import random
 from collections import defaultdict
 
 
@@ -39,15 +38,9 @@ def run_optimizer(df, df_avail):
     df['접수일자'] = pd.to_datetime(df['접수일자'])
     df = df.sort_values('접수일자')
 
-    # 랜덤 연속 20개 신청서 추출
-    req_dates = df.groupby('신청서번호')['접수일자'].max().sort_values()
-    if len(req_dates) > 20:
-        start_idx = random.randint(0, len(req_dates) - 20)
-        selected_reqs = req_dates.iloc[start_idx : start_idx + 20].index
-    else:
-        selected_reqs = req_dates.index
-
-    df = df[df['신청서번호'].isin(selected_reqs)].reset_index(drop=True)
+    # 전달된 신청서 전체를 대상으로 최적화한다.
+    # (재최적화 시 미완료 신청서 전체를 합쳐 넣어 출동 시간 충돌을 해소하려는 목적)
+    df = df.reset_index(drop=True)
     COL_PPL = '필요인원수'
 
     # ==========================================
@@ -59,7 +52,8 @@ def run_optimizer(df, df_avail):
     # ==========================================
     # 3. 슬롯 달력 생성
     # ==========================================
-    ref_date   = df['접수일자'].min()
+    # Q6: 출동일시 기준일 = 실행일(오늘). 과거 슬롯이 생기지 않게 한다.
+    ref_date   = pd.Timestamp.today().normalize()
     ref_monday = ref_date - timedelta(days=ref_date.weekday())
     ref_mon_np = np.datetime64(ref_monday.date())
 

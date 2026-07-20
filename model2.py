@@ -129,14 +129,24 @@ def normalize_edge_type(value):
 
 
 def split_location_to_building_room(location):
+    """설치장소에서 건물명(한글)만 파싱한다. 예:
+    '공학관 401호'                     -> ('공학관', '401호')
+    '도서관102호 (학술연구지원팀)'      -> ('도서관', '102호')
+    '도서관B101호 (자료열람실)'         -> ('도서관', 'B101호')
+    '중앙도서관'                        -> ('중앙도서관', None)
+    """
     if location is None or pd.isna(location):
         return "", None
     text = str(location).strip()
     if not text:
         return "", None
-    parts = text.split(maxsplit=1)
-    building = parts[0].strip()
-    room = parts[1].strip() if len(parts) > 1 else None
+    # 1) 뒤쪽 괄호 설명(예: '(학술연구지원팀)') 제거
+    text = re.sub(r"\s*\(.*\)\s*$", "", text).strip()
+    # 2) 끝의 호실(예: '401호', 'B101호', 'B101B호', '102') 제거 → 건물명만 남김
+    building = re.sub(r"\s*[A-Za-z]?\d+[A-Za-z0-9]*호?\s*$", "", text).strip()
+    if not building:  # 전부 호실로 인식된 예외 상황 방지
+        building = text
+    room = text[len(building):].strip() or None
     return building, room
 
 

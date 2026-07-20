@@ -157,7 +157,7 @@ async def optimize(data: List[OptimizeRequest]):
 
 
 # ==========================================
-# 신청서 OCR 저장 (NAVER CLOVA OCR)
+# 신청서 OCR 저장 (Vision LLM / OpenRouter)
 # ==========================================
 def _normalize_date(raw: Optional[str]) -> str:
     """OCR로 읽은 날짜 문자열을 YYYY-MM-DD로 정규화. 실패 시 오늘 날짜."""
@@ -215,8 +215,8 @@ async def create_application_from_ocr(
     db: Session = Depends(get_db),
 ):
     """
-    신청서 이미지(PNG/JPEG/TIFF) 또는 PDF를 업로드하면
-    CLOVA OCR로 기본정보·품목 표를 추출해 applications 에 저장한다. (상태=접수, 점검완료=false)
+    신청서 이미지(PNG/JPEG/TIFF)를 업로드하면
+    비전 LLM(OpenRouter)으로 기본정보·품목 표를 추출해 applications 에 저장한다. (상태=접수, 점검완료=false)
 
     - 헤더 필드(신청번호/신청일자/신청부서/신청자/연락처)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
     - 각 품목 필요인원수는 products 마스터(품명) 값으로 채운다. (없으면 OCR값→1)
@@ -229,7 +229,7 @@ async def create_application_from_ocr(
     try:
         parsed = extract_application(file_bytes)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"OCR(CLOVA) 처리 실패: {e}")
+        raise HTTPException(status_code=502, detail=f"OCR 처리 실패: {e}")
 
     items = parsed["items"]
     if not items:

@@ -1,24 +1,22 @@
 """
-NAVER CLOVA OCR (Template) 기반 신청서 파서.
+비전 LLM(OpenRouter / Gemma 등) 기반 신청서 파서.
 
-신청서 이미지(PNG/JPEG/TIFF) 또는 PDF를 CLOVA OCR로 인식해
-  - 헤더 필드(fields)  -> {신청번호, 신청일자, 신청부서, 신청자, 연락처}
-  - 품목 표(tables)    -> [{품명, 설치장소, 수량, 필요인원수}]
-를 추출한다.
+신청서 이미지를 멀티모달 모델에 넘겨, 아래 형태의 구조화 JSON을 바로 받는다:
+  {"header": {신청번호, 신청일자, 신청부서, 신청자, 연락처},
+   "items":  [{품명, 설치장소, 수량, 필요인원수}]}
 
-전제:
-  - NCP CLOVA OCR 콘솔에서 신청서 양식을 Template 로 등록하고,
-    헤더 필드와 표(table) 영역을 지정해 둔다.
-  - .env 에 Clova_Invoke_URL, Clova_Secret_Key 를 넣어 둔다.
+Template OCR과 달리 고정 영역 지정이 없어, 표 위치·레이아웃이 조금 달라져도 모델이
+스스로 읽어 구조화한다. 필요인원수는 여기서 1로 두고 api.py 가 products 마스터로 채운다.
 
-extract_application() 반환 형태 {"header":..., "items":...} 는 Textract 버전과 동일하므로
-api.py 는 수정할 필요가 없다.
+.env:
+  OPENROUTER_API_KEY  : OpenRouter API 키 (sk-or-...)
+  OCR_MODEL           : 사용할 비전 모델 ID (기본 google/gemma-3-27b-it) — 반드시 이미지 입력 지원 모델
+
+extract_application() 반환 형태는 이전(Textract/CLOVA) 버전과 동일하므로 api.py 는 무변경.
 """
 import os
 import re
 import json
-import time
-import uuid
 import base64
 
 import requests
@@ -26,181 +24,131 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 표 컬럼 헤더/템플릿 필드명 -> 표준 필드명 (정규화된 텍스트로 매칭)
-COLUMN_SYNONYMS = {
-    "품명": ["품명", "자산명", "물품명", "품목", "물품", "제품명"],
-    "설치장소": ["설치장소", "설치위치", "위치사용명", "위치", "장소", "설치처"],
-    "수량": ["수량", "개수", "qty", "수량개수"],
-    "필요인원수": ["필요인원수", "필요인원", "인원수", "인원"],
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OCR_TIMEOUT = 60  # 초 (VLM은 응답이 느릴 수 있음)
+
+# 표준 헤더 키 (모델이 반환해야 할 필드)
+HEADER_KEYS = ("신청번호", "신청일자", "신청부서", "신청자", "연락처")
+
+EXTRACT_PROMPT = """다음은 물품 신청서 이미지다. 내용을 읽어 아래 JSON 형식으로만 답하라.
+설명 문장이나 코드블록(```) 없이 순수 JSON만 출력한다.
+
+{
+  "header": {
+    "신청번호": "",
+    "신청일자": "",
+    "신청부서": "",
+    "신청자": "",
+    "연락처": ""
+  },
+  "items": [
+    {"품명": "", "설치장소": "", "수량": 0}
+  ]
 }
 
-# 헤더(템플릿 필드) 이름 -> 표준 필드명
-HEADER_SYNONYMS = {
-    "신청번호": ["신청번호", "신청서번호", "접수번호", "문서번호"],
-    "신청일자": ["신청일자", "접수일자", "신청일", "일자", "작성일"],
-    "신청부서": ["신청부서", "신청조직", "부서", "신청기관", "소속"],
-    "신청자":   ["신청자", "신청인", "담당자", "작성자", "성명"],
-    "연락처":   ["연락처", "전화번호", "휴대폰", "핸드폰", "전화", "tel", "hp"],
-}
-
-CLOVA_TIMEOUT = 30  # 초
+규칙:
+- 값이 안 보이면 빈 문자열("")로 둔다. 없는 값을 지어내지 않는다.
+- 품목 표의 각 행을 items 배열의 원소로 만든다.
+- 수량은 정수로 적는다.
+- 합계/소계 같은 요약 행은 제외한다.
+- 신청일자는 가능하면 YYYY-MM-DD 형식으로 정규화한다.
+"""
 
 
-def _normalize(text):
-    """공백/특수문자 제거 후 소문자화 — 필드/헤더 매칭용."""
-    return re.sub(r"[\s:()\[\]/·.,-]", "", (text or "")).lower()
-
-
-def _match_field(text, synonyms_map):
-    """정규화된 text가 어떤 표준 필드에 해당하는지 반환 (없으면 None)."""
-    norm = _normalize(text)
-    if not norm:
-        return None
-    for field, syns in synonyms_map.items():
-        for syn in syns:
-            if _normalize(syn) in norm or norm in _normalize(syn):
-                return field
-    return None
-
-
-def _to_int(text, default=1):
-    digits = re.sub(r"[^\d]", "", text or "")
+def _to_int(value, default=1):
+    digits = re.sub(r"[^\d]", "", str(value if value is not None else ""))
     return int(digits) if digits else default
 
 
-def _get_clova_config():
-    """CLOVA OCR 호출 설정(.env). 이름 대소문자 변형도 허용."""
-    url = os.getenv("Clova_Invoke_URL") or os.getenv("CLOVA_INVOKE_URL")
-    secret = os.getenv("Clova_Secret_Key") or os.getenv("CLOVA_SECRET_KEY")
-    if not url or not secret:
-        raise RuntimeError(
-            "CLOVA OCR 설정 없음: .env 에 Clova_Invoke_URL / Clova_Secret_Key 를 넣으세요."
-        )
-    # CLOVA OCR는 HTTPS(443)만 받는다. http:// 로 저장돼 있으면 보정한다.
-    if url.startswith("http://"):
-        url = "https://" + url[len("http://"):]
-    return url, secret
+def _get_api_key():
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY 없음: .env 에 OpenRouter 키를 넣으세요.")
+    return key
 
 
-def _detect_format(file_bytes):
-    """파일 시그니처로 CLOVA format 값을 추정한다."""
+def _get_model():
+    return os.getenv("OCR_MODEL", "google/gemma-3-27b-it")
+
+
+def _detect_mime(file_bytes):
+    """파일 시그니처로 data URI mime 타입을 추정한다."""
     if file_bytes[:4] == b"\x89PNG":
-        return "png"
+        return "image/png"
     if file_bytes[:3] == b"\xff\xd8\xff":
-        return "jpg"
+        return "image/jpeg"
     if file_bytes[:4] == b"%PDF":
-        return "pdf"
+        return "application/pdf"  # 주: 모델에 따라 PDF 미지원일 수 있음
     if file_bytes[:4] in (b"II*\x00", b"MM\x00*"):
-        return "tiff"
-    return "jpg"
+        return "image/tiff"
+    return "image/jpeg"
 
 
-def _call_clova(file_bytes):
-    """CLOVA OCR API 호출 → 응답 JSON 반환."""
-    url, secret = _get_clova_config()
+def _call_vlm(file_bytes):
+    """OpenRouter(OpenAI 호환)로 이미지+프롬프트를 보내 모델 응답 텍스트를 반환."""
+    mime = _detect_mime(file_bytes)
+    b64 = base64.b64encode(file_bytes).decode("ascii")
     payload = {
-        "version": "V2",
-        "requestId": str(uuid.uuid4()),
-        "timestamp": int(time.time() * 1000),
-        "images": [{
-            "format": _detect_format(file_bytes),
-            "name": "application",
-            "data": base64.b64encode(file_bytes).decode("ascii"),
+        "model": _get_model(),
+        "temperature": 0,  # 환각 최소화
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": EXTRACT_PROMPT},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            ],
         }],
     }
     resp = requests.post(
-        url,
-        headers={"X-OCR-SECRET": secret, "Content-Type": "application/json"},
+        OPENROUTER_URL,
+        headers={
+            "Authorization": f"Bearer {_get_api_key()}",
+            "Content-Type": "application/json",
+            "X-Title": "gjt-demo-server OCR",
+        },
         data=json.dumps(payload),
-        timeout=CLOVA_TIMEOUT,
+        timeout=OCR_TIMEOUT,
     )
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"]
 
 
-def _cell_text(cell):
-    """CLOVA 표 셀의 텍스트를 이어붙인다."""
-    words = []
-    for line in cell.get("cellTextLines", []):
-        for w in line.get("cellWords", []):
-            words.append(w.get("inferText", ""))
-    return " ".join(words).strip()
-
-
-def _parse_fields(fields):
-    """Template 필드(fields) -> 표준 헤더 dict."""
-    header = {}
-    for f in fields:
-        std = _match_field(f.get("name", ""), HEADER_SYNONYMS)
-        if not std or std in header:
-            continue
-        value = (f.get("inferText") or "").strip()
-        if value:
-            header[std] = value
-    return header
-
-
-def _parse_tables(tables):
-    """CLOVA 표(tables) -> 품목 행 리스트."""
-    items = []
-    for tbl in tables:
-        cells = tbl.get("cells", [])
-        if not cells:
-            continue
-
-        # 셀 좌표(0-based) -> 텍스트 격자
-        grid = {}
-        max_row = max_col = 0
-        for cell in cells:
-            r = cell.get("rowIndex", 0)
-            c = cell.get("columnIndex", 0)
-            grid[(r, c)] = _cell_text(cell)
-            max_row, max_col = max(max_row, r), max(max_col, c)
-
-        if max_row < 1:  # 헤더(0행) + 데이터(1행 이상) 필요
-            continue
-
-        # 0행(헤더)으로 컬럼 인덱스 -> 표준 필드 매핑
-        col_to_field = {}
-        for c in range(0, max_col + 1):
-            field = _match_field(grid.get((0, c), ""), COLUMN_SYNONYMS)
-            if field:
-                col_to_field[c] = field
-
-        if "품명" not in col_to_field.values():
-            continue  # 품목 표가 아님
-
-        for r in range(1, max_row + 1):
-            row = {"품명": "", "설치장소": "", "수량": 1, "필요인원수": 1}
-            for c, field in col_to_field.items():
-                val = grid.get((r, c), "").strip()
-                if field in ("수량", "필요인원수"):
-                    row[field] = _to_int(val, default=1)
-                else:
-                    row[field] = val
-            if row["품명"]:
-                items.append(row)
-
-    return items
+def _extract_json(text):
+    """모델 응답 텍스트에서 첫 JSON 오브젝트를 추출·파싱한다 (코드블록/설명 섞여도 대응)."""
+    if not text:
+        raise ValueError("모델 응답이 비어 있습니다.")
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError(f"응답에서 JSON을 찾지 못했습니다: {text[:200]}")
+    return json.loads(match.group(0))
 
 
 def extract_application(file_bytes):
     """
-    신청서 이미지/PDF 바이트를 받아 구조화 결과를 반환.
+    신청서 이미지 바이트를 받아 구조화 결과를 반환.
 
     반환: {"header": {...}, "items": [{품명, 설치장소, 수량, 필요인원수}, ...]}
     """
-    result = _call_clova(file_bytes)
-    images = result.get("images", [])
-    if not images:
-        return {"header": {}, "items": []}
+    content = _call_vlm(file_bytes)
+    parsed = _extract_json(content)
 
-    img = images[0]
-    infer = img.get("inferResult")
-    if infer and infer != "SUCCESS":
-        raise RuntimeError(f"CLOVA OCR 인식 실패: {img.get('message', infer)}")
-
-    return {
-        "header": _parse_fields(img.get("fields", [])),
-        "items": _parse_tables(img.get("tables", [])),
+    raw_header = parsed.get("header") or {}
+    header = {
+        k: (str(raw_header[k]).strip() if raw_header.get(k) is not None else "")
+        for k in HEADER_KEYS if k in raw_header
     }
+
+    items = []
+    for it in (parsed.get("items") or []):
+        name = str(it.get("품명") or "").strip()
+        if not name:  # 품명 없는 행(빈 행/합계 등) 제외
+            continue
+        items.append({
+            "품명":       name,
+            "설치장소":   str(it.get("설치장소") or "").strip(),
+            "수량":       _to_int(it.get("수량")),
+            "필요인원수": 1,  # products 마스터에서 채워짐 (api.py._enrich_items_with_master)
+        })
+
+    return {"header": header, "items": items}

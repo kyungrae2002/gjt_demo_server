@@ -605,10 +605,11 @@ def schedules_today(db: Session = Depends(get_db)):
 @app.post("/dispatch/confirm")
 def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depends(get_db)):
     """
-    오늘 출동 일정을 확정한다. 건물별 실내 수거 동선(model2)을 계산해 각 일정에 저장하고
-    출동확정=true로 표시한다. 이후 수정이 필요하면 PATCH /schedules/{id}로 갱신한다.
+    오늘 출동 일정을 확정한다. **출동일시(시간 슬롯) 단위로 묶어**, 슬롯마다 건물별 실내
+    수거 동선(model2)을 따로 계산해 각 일정에 저장하고 출동확정=true로 표시한다.
+    (같은 건물이라도 다른 시간대 출동은 별개 동선으로 계산된다.)
 
-    투입인원수는 기본적으로 최적화가 정한 값(schedules.투입인원수)을 그대로 사용한다.
+    투입인원수는 기본적으로 그 슬롯의 최적화 값(schedules.투입인원수)을 사용하고,
     파라미터로 넘기면 그 값으로 덮어쓴다(선택).
     """
     today = date.today()
@@ -617,40 +618,56 @@ def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depend
     rows = (
         db.query(Schedule)
         .filter(Schedule.출동일시 >= start, Schedule.출동일시 < end)
+        .order_by(Schedule.출동일시)
         .all()
     )
     if not rows:
         raise HTTPException(status_code=400, detail="오늘 출동할 일정이 없습니다.")
 
-    df = pd.DataFrame([{
-        "신청번호":   s.신청번호,
-        "품명":       s.품명,
-        "설치장소":   s.설치장소,
-        "수량":       s.수량,
-        "필요인원수": s.필요인원수,
-    } for s in rows])
-
-    # 투입인원수: 파라미터가 있으면 그 값, 없으면 최적화가 정한 값(schedules.투입인원수) 사용.
-    if 투입인원수 is not None:
-        dispatch_people = float(투입인원수)
-    else:
-        staffs = [s.투입인원수 for s in rows if s.투입인원수]
-        dispatch_people = float(max(staffs)) if staffs else None
-    try:
-        route_results = run_route_optimizer(df, None, dispatch_people)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"건물 그래프 파일 없음: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"동선 계산 오류: {e}")
-
-    route_by_building = {r.get("건물명"): r for r in route_results}
+    # 출동일시(시간 슬롯)로 묶는다 = 한 번의 출동 단위
+    slots = {}
     for s in rows:
-        building = split_location_to_building_room(s.설치장소)[0]
-        s.동선 = route_by_building.get(building)
-        s.출동확정 = True
-    db.commit()
+        slots.setdefault(s.출동일시, []).append(s)
 
-    return {"확정_일정수": len(rows), "건물수": len(route_results), "동선": route_results}
+    슬롯별 = []
+    for slot_time, slot_rows in slots.items():
+        df = pd.DataFrame([{
+            "신청번호":   s.신청번호,
+            "품명":       s.품명,
+            "설치장소":   s.설치장소,
+            "수량":       s.수량,
+            "필요인원수": s.필요인원수,
+        } for s in slot_rows])
+
+        # 투입인원수: 파라미터 > 이 슬롯의 최적화 값(max) > None(모델 기본)
+        if 투입인원수 is not None:
+            dispatch_people = float(투입인원수)
+        else:
+            staffs = [s.투입인원수 for s in slot_rows if s.투입인원수]
+            dispatch_people = float(max(staffs)) if staffs else None
+
+        try:
+            route_results = run_route_optimizer(df, None, dispatch_people)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=f"건물 그래프 파일 없음: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"동선 계산 오류: {e}")
+
+        route_by_building = {r.get("건물명"): r for r in route_results}
+        for s in slot_rows:
+            building = split_location_to_building_room(s.설치장소)[0]
+            s.동선 = route_by_building.get(building)
+            s.출동확정 = True
+
+        슬롯별.append({
+            "출동일시": slot_time.isoformat() if slot_time else None,
+            "일정수":   len(slot_rows),
+            "건물수":   len(route_results),
+            "동선":     route_results,
+        })
+
+    db.commit()
+    return {"확정_일정수": len(rows), "출동_슬롯수": len(slots), "슬롯별": 슬롯별}
 
 
 @app.patch("/schedules/{schedule_id}")

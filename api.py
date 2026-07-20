@@ -8,6 +8,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, File, UploadFile, 
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
@@ -33,8 +34,13 @@ ALLOWED_ORIGINS = [
     "https://gjtdemoserver-production.up.railway.app",
 ]
 
-# Origin 검증을 건너뛸 경로 (브라우저 주소창에서 직접 여는 문서·헬스체크)
+# Origin 검증·API 키를 건너뛸 경로 (브라우저 주소창에서 직접 여는 문서·헬스체크)
 ORIGIN_EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/openapi.yaml"}
+
+# API 키 인증. .env 의 API_KEY 가 설정된 경우에만 강제한다.
+# 요청 헤더 X-API-Key 값이 일치해야 통과. (curl 등 무단 요청 차단용)
+API_KEY = os.getenv("API_KEY")
+API_KEY_HEADER = "X-API-Key"
 
 
 @app.middleware("http")
@@ -45,13 +51,22 @@ async def verify_origin(request: Request, call_next):
     # CORS preflight(OPTIONS)는 CORSMiddleware가 처리하도록 통과
     if request.method == "OPTIONS":
         return await call_next(request)
-    # 프론트엔드(cross-origin) 요청에는 브라우저가 항상 Origin 헤더를 붙인다
+    # 동일 출처 GET·Swagger·비브라우저(서버·curl) 요청은 Origin 헤더가 없다(None).
+    # cross-origin 위협 요청은 브라우저가 반드시 Origin을 붙이므로, Origin이 있을 때만 검증한다.
     origin = request.headers.get("origin")
-    if origin not in ALLOWED_ORIGINS:
+    if origin is not None and origin not in ALLOWED_ORIGINS:
         return JSONResponse(
             status_code=403,
             content={"detail": "허용되지 않은 요청 출처입니다."},
         )
+
+    # API 키 인증 (Origin과 무관하게 동작 → curl 등 무단 요청 차단). 미설정 시 건너뜀.
+    if API_KEY and request.headers.get("x-api-key") != API_KEY:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "유효한 API 키가 필요합니다."},
+        )
+
     return await call_next(request)
 
 
@@ -61,6 +76,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Swagger UI 에 Authorize(자물쇠) 버튼을 띄워 X-API-Key 를 넣어 테스트할 수 있게 한다.
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title="API Docs", version="1.0.0", routes=app.routes)
+    schema.setdefault("components", {})["securitySchemes"] = {
+        "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": API_KEY_HEADER}
+    }
+    schema["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = custom_openapi
 
 
 # ==========================================
@@ -109,6 +139,7 @@ class ApplicationItem(BaseModel):
     필요인원수: int
 
 class ApplicationPatch(BaseModel):
+    신청번호: Optional[str] = None
     신청일자: Optional[str] = None
     신청부서: Optional[str] = None
     신청자: Optional[str] = None
@@ -331,27 +362,38 @@ def _upsert_product_master(db: Session, 품명: str, 필요인원수: int):
         db.add(Product(품명=name, 필요인원수=int(필요인원수)))
 
 
-@app.get("/applications/{신청번호}")
-def get_application(신청번호: str, db: Session = Depends(get_db)):
-    """점검용 상세 조회: 기본정보 + 품목별 인원수."""
-    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+@app.get("/applications/{app_id}")
+def get_application(app_id: int, db: Session = Depends(get_db)):
+    """점검용 상세 조회(id로 식별): 기본정보 + 품목별 인원수."""
+    app_row = db.query(Application).filter(Application.id == app_id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
     return _application_to_dict(app_row)
 
 
-@app.patch("/applications/{신청번호}")
-def update_application(신청번호: str, body: ApplicationPatch, db: Session = Depends(get_db)):
+@app.patch("/applications/{app_id}")
+def update_application(app_id: int, body: ApplicationPatch, db: Session = Depends(get_db)):
     """
-    점검 단계: 기본정보(신청일자/신청부서/신청자/연락처)와 품목별 인원수를 수정하고
+    점검 단계: 기본정보(신청번호/신청일자/신청부서/신청자/연락처)와 품목별 인원수를 수정하고
     점검완료 처리한다.
 
+    - 신청번호를 바꾸면 유니크 검사 후 반영한다. (점검 단계엔 아직 일정이 없어 안전)
     - 물품목록의 필요인원수를 수정하면 products 마스터도 upsert(품명 기준) → 이후 신청서에 일반 적용.
       (이미 저장된 다른 신청서 스냅샷은 소급 변경하지 않음)
     """
-    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+    app_row = db.query(Application).filter(Application.id == app_id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
+
+    if body.신청번호 is not None and body.신청번호.strip() != app_row.신청번호:
+        new_no = body.신청번호.strip()
+        if not new_no:
+            raise HTTPException(status_code=400, detail="신청번호는 빈 값일 수 없습니다.")
+        if db.query(Application).filter(
+            Application.신청번호 == new_no, Application.id != app_id
+        ).first():
+            raise HTTPException(status_code=409, detail=f"이미 존재하는 신청번호입니다: {new_no}")
+        app_row.신청번호 = new_no
 
     if body.신청일자 is not None:
         app_row.신청일자 = body.신청일자
@@ -386,10 +428,10 @@ def update_application(신청번호: str, body: ApplicationPatch, db: Session = 
     return _application_to_dict(app_row)
 
 
-@app.patch("/applications/{신청번호}/complete")
-def complete_application(신청번호: str, db: Session = Depends(get_db)):
-    """수거 완료 처리(상태=완료). 이후 재최적화 대상에서 제외된다."""
-    app_row = db.query(Application).filter(Application.신청번호 == 신청번호).first()
+@app.patch("/applications/{app_id}/complete")
+def complete_application(app_id: int, db: Session = Depends(get_db)):
+    """수거 완료 처리(id로 식별, 상태=완료). 이후 재최적화 대상에서 제외된다."""
+    app_row = db.query(Application).filter(Application.id == app_id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
     app_row.상태 = "완료"

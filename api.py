@@ -97,9 +97,12 @@ app.openapi = custom_openapi
 # Pydantic 스키마
 # ==========================================
 class OptimizeItem(BaseModel):
+    자산번호: Optional[str] = ""
     품명: str
+    규격모델: Optional[str] = ""
     설치장소: str
     수량: int
+    금액: Optional[str] = ""
     필요인원수: int
 
 class OptimizeRequest(BaseModel):
@@ -208,9 +211,12 @@ async def optimize(data: List[OptimizeRequest]):
                 "신청번호":   req.신청번호,
                 "신청일자":   req.신청일자,
                 "신청부서":   req.신청부서,
+                "자산번호":   item.자산번호,
                 "품명":       item.품명,
+                "규격모델":   item.규격모델,
                 "설치장소":   item.설치장소,
                 "수량":       item.수량,
+                "금액":       item.금액,
                 "필요인원수": item.필요인원수,
             })
     df       = pd.DataFrame(rows)

@@ -79,7 +79,8 @@ def _call_vlm(file_bytes):
     b64 = base64.b64encode(file_bytes).decode("ascii")
     payload = {
         "model": _get_model(),
-        "temperature": 0,  # 환각 최소화
+        "temperature": 0,      # 환각 최소화
+        "max_tokens": 4096,    # 품목이 많아도 JSON이 잘리지 않도록 충분히 확보
         "messages": [{
             "role": "user",
             "content": [
@@ -104,13 +105,42 @@ def _call_vlm(file_bytes):
 
 
 def _extract_json(text):
-    """모델 응답 텍스트에서 첫 JSON 오브젝트를 추출·파싱한다 (코드블록/설명 섞여도 대응)."""
+    """
+    모델 응답 텍스트에서 JSON 오브젝트를 추출·파싱한다.
+    - 코드블록/설명 문장이 섞여도 첫 '{'부터 균형 잡힌 '}'까지만 잡는다(문자열 내 중괄호 무시).
+    - 응답이 잘려 균형이 안 맞으면 '잘림'을 명확히 알린다.
+    """
     if not text:
         raise ValueError("모델 응답이 비어 있습니다.")
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        raise ValueError(f"응답에서 JSON을 찾지 못했습니다: {text[:200]}")
-    return json.loads(match.group(0))
+    t = re.sub(r"```(?:json)?", "", text)  # 코드펜스 제거
+
+    start = t.find("{")
+    if start == -1:
+        raise ValueError(f"응답에서 JSON을 찾지 못했습니다: {text[:300]}")
+
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(t)):
+        c = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(t[start:i + 1])
+
+    # 끝까지 depth가 0으로 안 돌아옴 → 응답이 중간에 잘림
+    raise ValueError(f"JSON이 완결되지 않았습니다(응답 잘림 가능). 원본 끝부분: ...{text[-300:]}")
 
 
 def extract_application(file_bytes):

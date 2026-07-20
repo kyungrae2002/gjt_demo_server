@@ -1,9 +1,7 @@
-import io
 import os
 from datetime import date, datetime, timedelta
 import yaml
 import pandas as pd
-import boto3
 from fastapi import FastAPI, Depends, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import JSONResponse, Response, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,31 +94,6 @@ app.openapi = custom_openapi
 # ==========================================
 # Pydantic 스키마
 # ==========================================
-class OptimizeItem(BaseModel):
-    자산번호: Optional[str] = ""
-    품명: str
-    규격모델: Optional[str] = ""
-    설치장소: str
-    수량: int
-    금액: Optional[str] = ""
-    필요인원수: int
-
-class OptimizeRequest(BaseModel):
-    신청번호: str
-    신청일자: str
-    신청부서: str
-    물품목록: List[OptimizeItem]
-
-class RouteItem(BaseModel):
-    품명: str
-    설치장소: str
-    수량: int
-    필요인원수: int
-
-class RouteRequest(BaseModel):
-    투입인원수: Optional[int] = None
-    신청서: List[RouteItem]
-
 class ProductCreate(BaseModel):
     품명: str
     필요인원수: int
@@ -128,9 +101,6 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     품명: Optional[str] = None
     필요인원수: Optional[int] = None
-
-class ImportRequest(BaseModel):
-    s3_key: str
 
 class ApplicationItem(BaseModel):
     자산번호: Optional[str] = ""
@@ -197,32 +167,6 @@ def custom_swagger_ui():
     )
     body = html.body.decode().replace("</body>", f"{download_btn}</body>")
     return HTMLResponse(content=body)
-
-
-# ==========================================
-# 최적화
-# ==========================================
-@app.post("/optimize")
-async def optimize(data: List[OptimizeRequest]):
-    rows = []
-    for req in data:
-        for item in req.물품목록:
-            rows.append({
-                "신청번호":   req.신청번호,
-                "신청일자":   req.신청일자,
-                "신청부서":   req.신청부서,
-                "자산번호":   item.자산번호,
-                "품명":       item.품명,
-                "규격모델":   item.규격모델,
-                "설치장소":   item.설치장소,
-                "수량":       item.수량,
-                "금액":       item.금액,
-                "필요인원수": item.필요인원수,
-            })
-    df       = pd.DataFrame(rows)
-    df_avail = pd.read_csv("datas/근로학생시간.csv")
-    results  = run_optimizer(df, df_avail)
-    return JSONResponse(content=results)
 
 
 # ==========================================
@@ -688,40 +632,6 @@ def update_schedule(schedule_id: int, body: SchedulePatch, db: Session = Depends
 
 
 # ==========================================
-# 건물 내 수거 동선 최적화
-# ==========================================
-@app.post("/optimize/route")
-async def optimize_route(data: RouteRequest):
-    if not data.신청서:
-        raise HTTPException(status_code=400, detail="신청서 목록이 비어 있습니다.")
-
-    rows = []
-    for idx, item in enumerate(data.신청서, start=1):
-        building = item.설치장소.split()[0] if item.설치장소 and item.설치장소.strip() else ""
-        if not building:
-            raise HTTPException(status_code=400, detail=f"신청서 {idx}번: 설치장소에서 건물명을 파악할 수 없습니다. (입력값: '{item.설치장소}')")
-        rows.append({
-            "신청번호":   str(idx),
-            "품명":       item.품명,
-            "설치장소":   item.설치장소,
-            "수량":       item.수량,
-            "필요인원수": item.필요인원수,
-        })
-
-    df              = pd.DataFrame(rows)
-    dispatch_people = float(data.투입인원수) if data.투입인원수 is not None else None
-
-    try:
-        results = run_route_optimizer(df, None, dispatch_people)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"건물 그래프 파일 없음: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"최적화 실행 오류: {e}")
-
-    return JSONResponse(content=results)
-
-
-# ==========================================
 # 제품 조회
 # ==========================================
 @app.get("/products")
@@ -778,29 +688,3 @@ def update_product(name: str, body: ProductUpdate, db: Session = Depends(get_db)
     db.commit()
     db.refresh(product)
     return {"id": product.id, "품명": product.품명, "필요인원수": product.필요인원수}
-
-
-# ==========================================
-# S3 CSV → RDS bulk import
-# ==========================================
-@app.post("/products/import")
-def import_products_from_s3(body: ImportRequest, db: Session = Depends(get_db)):
-    # 자격증명은 boto3 기본 체인(env → ~/.aws → EC2 IAM 역할)에 맡긴다.
-    s3 = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
-    try:
-        obj = s3.get_object(Bucket=os.getenv("S3_BUCKET"), Key=body.s3_key)
-        df = pd.read_csv(io.BytesIO(obj["Body"].read()), encoding="utf-8-sig")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"S3 파일 읽기 실패: {e}")
-
-    required_cols = {"품명", "필요인원수"}
-    if not required_cols.issubset(df.columns):
-        raise HTTPException(status_code=400, detail=f"CSV 필수 컬럼 없음: {required_cols - set(df.columns)}")
-
-    records = [
-        Product(품명=row["품명"], 필요인원수=int(row["필요인원수"]))
-        for _, row in df.iterrows()
-    ]
-    db.bulk_save_objects(records)
-    db.commit()
-    return {"imported": len(records)}

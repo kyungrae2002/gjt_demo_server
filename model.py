@@ -338,6 +338,8 @@ def run_optimizer(df, df_avail):
             continue
 
         dispatch_label = slot_to_label(t)
+        staff_t = int(round(pulp.value(N[t]) or 0))   # 이 슬롯 최적화가 정한 투입 인원(N[t])
+        names_t = Avail_names.get(t, "")               # 그 슬롯 가용 근로학생 명단
         for g in assigned_g:
             gd = G_data[g]
             for item in gd['items']:
@@ -353,6 +355,8 @@ def run_optimizer(df, df_avail):
                     '수량':       1,
                     '금액':       item['금액'],
                     '필요인원수': item['필요인원수'],
+                    '투입인원수': staff_t,
+                    '가용명단':   names_t,
                 })
 
     return output_rows

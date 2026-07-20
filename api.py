@@ -512,6 +512,8 @@ def optimize_run(db: Session = Depends(get_db)):
             신청부서=r["신청부서"],
             수량=int(r.get("수량") or 1),
             필요인원수=int(r.get("필요인원수") or 1),
+            투입인원수=int(r.get("투입인원수") or 0),
+            가용명단=r.get("가용명단"),
             optimize_run_id=run_id,
             출동확정=False,
         ))
@@ -605,6 +607,9 @@ def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depend
     """
     오늘 출동 일정을 확정한다. 건물별 실내 수거 동선(model2)을 계산해 각 일정에 저장하고
     출동확정=true로 표시한다. 이후 수정이 필요하면 PATCH /schedules/{id}로 갱신한다.
+
+    투입인원수는 기본적으로 최적화가 정한 값(schedules.투입인원수)을 그대로 사용한다.
+    파라미터로 넘기면 그 값으로 덮어쓴다(선택).
     """
     today = date.today()
     start = datetime(today.year, today.month, today.day)
@@ -625,7 +630,12 @@ def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depend
         "필요인원수": s.필요인원수,
     } for s in rows])
 
-    dispatch_people = float(투입인원수) if 투입인원수 is not None else None
+    # 투입인원수: 파라미터가 있으면 그 값, 없으면 최적화가 정한 값(schedules.투입인원수) 사용.
+    if 투입인원수 is not None:
+        dispatch_people = float(투입인원수)
+    else:
+        staffs = [s.투입인원수 for s in rows if s.투입인원수]
+        dispatch_people = float(max(staffs)) if staffs else None
     try:
         route_results = run_route_optimizer(df, None, dispatch_people)
     except FileNotFoundError as e:

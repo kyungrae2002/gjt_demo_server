@@ -30,6 +30,7 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:8080",
     "https://gwanzae.vercel.app",
+    "https://gjtdemoserver-production.up.railway.app/",
 ]
 
 # Origin 검증을 건너뛸 경로 (브라우저 주소창에서 직접 여는 문서·헬스체크)

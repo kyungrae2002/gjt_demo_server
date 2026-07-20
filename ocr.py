@@ -1,20 +1,32 @@
 """
-Amazon Textract 기반 신청서 OCR 파서.
+NAVER CLOVA OCR (Template) 기반 신청서 파서.
 
-신청서 이미지(PNG/JPEG) 또는 단일 페이지 PDF에서
-  - 품목 표(TABLES) -> [{품명, 설치장소, 수량, 필요인원수}, ...]
-  - 헤더 양식(FORMS) -> {신청번호, 신청일자, 신청부서}
+신청서 이미지(PNG/JPEG/TIFF) 또는 PDF를 CLOVA OCR로 인식해
+  - 헤더 필드(fields)  -> {신청번호, 신청일자, 신청부서, 신청자, 연락처}
+  - 품목 표(tables)    -> [{품명, 설치장소, 수량, 필요인원수}]
 를 추출한다.
 
-Textract 무료 티어(가입 후 3개월): AnalyzeDocument 월 100페이지 무료.
-동기 호출(analyze_document, Bytes 직접 전달)은 단일 페이지 이미지/PDF만 지원한다.
-멀티 페이지 PDF는 S3 업로드 후 StartDocumentAnalysis(비동기)를 써야 한다.
+전제:
+  - NCP CLOVA OCR 콘솔에서 신청서 양식을 Template 로 등록하고,
+    헤더 필드와 표(table) 영역을 지정해 둔다.
+  - .env 에 Clova_Invoke_URL, Clova_Secret_Key 를 넣어 둔다.
+
+extract_application() 반환 형태 {"header":..., "items":...} 는 Textract 버전과 동일하므로
+api.py 는 수정할 필요가 없다.
 """
 import os
 import re
-import boto3
+import json
+import time
+import uuid
+import base64
 
-# 표 컬럼 헤더 -> 표준 필드명 (정규화된 텍스트로 매칭)
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# 표 컬럼 헤더/템플릿 필드명 -> 표준 필드명 (정규화된 텍스트로 매칭)
 COLUMN_SYNONYMS = {
     "품명": ["품명", "자산명", "물품명", "품목", "물품", "제품명"],
     "설치장소": ["설치장소", "설치위치", "위치사용명", "위치", "장소", "설치처"],
@@ -22,7 +34,7 @@ COLUMN_SYNONYMS = {
     "필요인원수": ["필요인원수", "필요인원", "인원수", "인원"],
 }
 
-# 헤더 양식 key -> 표준 필드명
+# 헤더(템플릿 필드) 이름 -> 표준 필드명
 HEADER_SYNONYMS = {
     "신청번호": ["신청번호", "신청서번호", "접수번호", "문서번호"],
     "신청일자": ["신청일자", "접수일자", "신청일", "일자", "작성일"],
@@ -31,9 +43,11 @@ HEADER_SYNONYMS = {
     "연락처":   ["연락처", "전화번호", "휴대폰", "핸드폰", "전화", "tel", "hp"],
 }
 
+CLOVA_TIMEOUT = 30  # 초
+
 
 def _normalize(text):
-    """공백/특수문자 제거 후 소문자화 — 헤더 매칭용."""
+    """공백/특수문자 제거 후 소문자화 — 필드/헤더 매칭용."""
     return re.sub(r"[\s:()\[\]/·.,-]", "", (text or "")).lower()
 
 
@@ -54,62 +68,109 @@ def _to_int(text, default=1):
     return int(digits) if digits else default
 
 
-def _get_textract_client():
-    # 자격증명은 boto3 기본 체인에 맡긴다:
-    # 로컬 .env(환경변수) → ~/.aws → EC2 IAM 역할(인스턴스 프로파일) 순으로 자동 탐색.
-    # 덕분에 로컬(키)·배포(역할) 양쪽에서 코드 수정 없이 동작한다.
-    return boto3.client("textract", region_name=os.getenv("AWS_REGION", "us-east-1"))
+def _get_clova_config():
+    """CLOVA OCR 호출 설정(.env). 이름 대소문자 변형도 허용."""
+    url = os.getenv("Clova_Invoke_URL") or os.getenv("CLOVA_INVOKE_URL")
+    secret = os.getenv("Clova_Secret_Key") or os.getenv("CLOVA_SECRET_KEY")
+    if not url or not secret:
+        raise RuntimeError(
+            "CLOVA OCR 설정 없음: .env 에 Clova_Invoke_URL / Clova_Secret_Key 를 넣으세요."
+        )
+    # CLOVA OCR는 HTTPS(443)만 받는다. http:// 로 저장돼 있으면 보정한다.
+    if url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    return url, secret
 
 
-def _block_text(block, blocks_by_id):
-    """CELL/KEY 블록의 자식 WORD·SELECTION 텍스트를 이어붙인다."""
+def _detect_format(file_bytes):
+    """파일 시그니처로 CLOVA format 값을 추정한다."""
+    if file_bytes[:4] == b"\x89PNG":
+        return "png"
+    if file_bytes[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if file_bytes[:4] == b"%PDF":
+        return "pdf"
+    if file_bytes[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    return "jpg"
+
+
+def _call_clova(file_bytes):
+    """CLOVA OCR API 호출 → 응답 JSON 반환."""
+    url, secret = _get_clova_config()
+    payload = {
+        "version": "V2",
+        "requestId": str(uuid.uuid4()),
+        "timestamp": int(time.time() * 1000),
+        "images": [{
+            "format": _detect_format(file_bytes),
+            "name": "application",
+            "data": base64.b64encode(file_bytes).decode("ascii"),
+        }],
+    }
+    resp = requests.post(
+        url,
+        headers={"X-OCR-SECRET": secret, "Content-Type": "application/json"},
+        data=json.dumps(payload),
+        timeout=CLOVA_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _cell_text(cell):
+    """CLOVA 표 셀의 텍스트를 이어붙인다."""
     words = []
-    for rel in block.get("Relationships", []):
-        if rel["Type"] != "CHILD":
-            continue
-        for cid in rel["Ids"]:
-            child = blocks_by_id.get(cid, {})
-            if child.get("BlockType") == "WORD":
-                words.append(child.get("Text", ""))
-            elif child.get("BlockType") == "SELECTION_ELEMENT":
-                if child.get("SelectionStatus") == "SELECTED":
-                    words.append("[X]")
+    for line in cell.get("cellTextLines", []):
+        for w in line.get("cellWords", []):
+            words.append(w.get("inferText", ""))
     return " ".join(words).strip()
 
 
-def _parse_tables(blocks, blocks_by_id):
-    """모든 TABLE 블록에서 품목 행을 추출한다."""
-    items = []
-    for tbl in [b for b in blocks if b["BlockType"] == "TABLE"]:
-        # 셀 좌표 -> 텍스트 격자 구성
-        grid = {}
-        max_row = max_col = 0
-        for rel in tbl.get("Relationships", []):
-            if rel["Type"] != "CHILD":
-                continue
-            for cid in rel["Ids"]:
-                cell = blocks_by_id.get(cid, {})
-                if cell.get("BlockType") != "CELL":
-                    continue
-                r, c = cell["RowIndex"], cell["ColumnIndex"]
-                grid[(r, c)] = _block_text(cell, blocks_by_id)
-                max_row, max_col = max(max_row, r), max(max_col, c)
+def _parse_fields(fields):
+    """Template 필드(fields) -> 표준 헤더 dict."""
+    header = {}
+    for f in fields:
+        std = _match_field(f.get("name", ""), HEADER_SYNONYMS)
+        if not std or std in header:
+            continue
+        value = (f.get("inferText") or "").strip()
+        if value:
+            header[std] = value
+    return header
 
-        if max_row < 2:  # 헤더 + 데이터 최소 2행 필요
+
+def _parse_tables(tables):
+    """CLOVA 표(tables) -> 품목 행 리스트."""
+    items = []
+    for tbl in tables:
+        cells = tbl.get("cells", [])
+        if not cells:
             continue
 
-        # 1행(헤더)으로 컬럼 인덱스 -> 표준 필드 매핑
+        # 셀 좌표(0-based) -> 텍스트 격자
+        grid = {}
+        max_row = max_col = 0
+        for cell in cells:
+            r = cell.get("rowIndex", 0)
+            c = cell.get("columnIndex", 0)
+            grid[(r, c)] = _cell_text(cell)
+            max_row, max_col = max(max_row, r), max(max_col, c)
+
+        if max_row < 1:  # 헤더(0행) + 데이터(1행 이상) 필요
+            continue
+
+        # 0행(헤더)으로 컬럼 인덱스 -> 표준 필드 매핑
         col_to_field = {}
-        for c in range(1, max_col + 1):
-            field = _match_field(grid.get((1, c), ""), COLUMN_SYNONYMS)
+        for c in range(0, max_col + 1):
+            field = _match_field(grid.get((0, c), ""), COLUMN_SYNONYMS)
             if field:
                 col_to_field[c] = field
 
-        # 품명 컬럼조차 못 찾으면 이 표는 품목 표가 아님
         if "품명" not in col_to_field.values():
-            continue
+            continue  # 품목 표가 아님
 
-        for r in range(2, max_row + 1):
+        for r in range(1, max_row + 1):
             row = {"품명": "", "설치장소": "", "수량": 1, "필요인원수": 1}
             for c, field in col_to_field.items():
                 val = grid.get((r, c), "").strip()
@@ -117,49 +178,29 @@ def _parse_tables(blocks, blocks_by_id):
                     row[field] = _to_int(val, default=1)
                 else:
                     row[field] = val
-            if row["품명"]:  # 품명 없는 행(빈 행/합계 행)은 건너뜀
+            if row["품명"]:
                 items.append(row)
 
     return items
 
 
-def _parse_header(blocks, blocks_by_id):
-    """KEY_VALUE_SET(FORMS)에서 신청번호/신청일자/신청부서를 추출한다."""
-    header = {}
-    for kv in [b for b in blocks if b["BlockType"] == "KEY_VALUE_SET"]:
-        if "KEY" not in kv.get("EntityTypes", []):
-            continue
-        key_text = _block_text(kv, blocks_by_id)
-        field = _match_field(key_text, HEADER_SYNONYMS)
-        if not field or field in header:
-            continue
-        # KEY -> VALUE 관계 추적
-        value_text = ""
-        for rel in kv.get("Relationships", []):
-            if rel["Type"] == "VALUE":
-                for vid in rel["Ids"]:
-                    value_text = _block_text(blocks_by_id.get(vid, {}), blocks_by_id)
-                    break
-        if value_text:
-            header[field] = value_text
-    return header
-
-
 def extract_application(file_bytes):
     """
-    신청서 이미지/단일페이지 PDF 바이트를 받아 구조화 결과를 반환.
+    신청서 이미지/PDF 바이트를 받아 구조화 결과를 반환.
 
     반환: {"header": {...}, "items": [{품명, 설치장소, 수량, 필요인원수}, ...]}
     """
-    client = _get_textract_client()
-    resp = client.analyze_document(
-        Document={"Bytes": file_bytes},
-        FeatureTypes=["TABLES", "FORMS"],
-    )
-    blocks = resp["Blocks"]
-    blocks_by_id = {b["Id"]: b for b in blocks}
+    result = _call_clova(file_bytes)
+    images = result.get("images", [])
+    if not images:
+        return {"header": {}, "items": []}
+
+    img = images[0]
+    infer = img.get("inferResult")
+    if infer and infer != "SUCCESS":
+        raise RuntimeError(f"CLOVA OCR 인식 실패: {img.get('message', infer)}")
 
     return {
-        "header": _parse_header(blocks, blocks_by_id),
-        "items": _parse_tables(blocks, blocks_by_id),
+        "header": _parse_fields(img.get("fields", [])),
+        "items": _parse_tables(img.get("tables", [])),
     }

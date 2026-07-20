@@ -1,6 +1,6 @@
 import io
 import os
-from datetime import date
+from datetime import date, datetime
 import yaml
 import pandas as pd
 import boto3
@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from model import run_optimizer
 from model2 import run_optimizer as run_route_optimizer
 from db import get_db, engine, Base
-from models import Product
+from models import Product, Application
 from ocr import extract_application
 
 try:
@@ -156,7 +156,7 @@ async def optimize(data: List[OptimizeRequest]):
 
 
 # ==========================================
-# 신청서 OCR → 최적화 (Amazon Textract)
+# 신청서 OCR 저장 (Amazon Textract)
 # ==========================================
 def _normalize_date(raw: Optional[str]) -> str:
     """OCR로 읽은 날짜 문자열을 YYYY-MM-DD로 정규화. 실패 시 오늘 날짜."""
@@ -167,20 +167,59 @@ def _normalize_date(raw: Optional[str]) -> str:
     return date.today().strftime("%Y-%m-%d")
 
 
-@app.post("/ocr/optimize")
-async def ocr_optimize(
+def _gen_application_no() -> str:
+    """신청번호 미검출 시 자동 생성 (타임스탬프 기반)."""
+    return "OCR-" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+
+
+def _enrich_items_with_master(items: list, db: Session) -> list:
+    """각 품목의 필요인원수를 products 마스터(품명)로 채운다. 없으면 OCR값→1."""
+    enriched = []
+    for it in items:
+        name = (it.get("품명") or "").strip()
+        master = db.query(Product).filter(Product.품명 == name).first()
+        ppl = master.필요인원수 if master else int(it.get("필요인원수") or 1)
+        enriched.append({
+            "품명":       name,
+            "설치장소":   (it.get("설치장소") or "").strip(),
+            "수량":       int(it.get("수량") or 1),
+            "필요인원수": int(ppl),
+        })
+    return enriched
+
+
+def _application_to_dict(app: Application) -> dict:
+    return {
+        "id":         app.id,
+        "신청번호":   app.신청번호,
+        "신청일자":   app.신청일자,
+        "신청부서":   app.신청부서,
+        "신청자":     app.신청자,
+        "연락처":     app.연락처,
+        "원본파일명": app.원본파일명,
+        "물품목록":   app.물품목록,
+        "상태":       app.상태,
+        "점검완료":   app.점검완료,
+    }
+
+
+@app.post("/ocr/applications")
+async def create_application_from_ocr(
     file: UploadFile = File(...),
     신청번호: Optional[str] = Form(None),
     신청일자: Optional[str] = Form(None),
     신청부서: Optional[str] = Form(None),
-    run: bool = Form(True),
+    신청자: Optional[str] = Form(None),
+    연락처: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
 ):
     """
     신청서 이미지(PNG/JPEG) 또는 단일 페이지 PDF를 업로드하면
-    Textract로 품목 표를 추출해 곧바로 /optimize 로직으로 넘긴다.
+    Textract로 기본정보·품목 표를 추출해 applications 에 저장한다. (상태=접수, 점검완료=false)
 
-    - 헤더 필드(신청번호/신청일자/신청부서)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
-    - run=false면 OCR 파싱 결과만 반환(최적화 미실행)해 검수에 쓸 수 있다.
+    - 헤더 필드(신청번호/신청일자/신청부서/신청자/연락처)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
+    - 각 품목 필요인원수는 products 마스터(품명) 값으로 채운다. (없으면 OCR값→1)
+    - 이후 [점검] 단계에서 기본정보·인원수를 확인·수정한다.
     """
     file_bytes = await file.read()
     if not file_bytes:
@@ -200,38 +239,31 @@ async def ocr_optimize(
 
     hdr = parsed["header"]
     # 폼 값 > OCR 헤더 > 기본값 순으로 채운다.
-    num  = 신청번호 or hdr.get("신청번호") or "OCR-1"
-    day  = _normalize_date(신청일자 or hdr.get("신청일자"))
-    # 신청부서 미검출 시 첫 품목의 설치장소 건물명으로 대체
+    num = 신청번호 or hdr.get("신청번호") or _gen_application_no()
+    day = _normalize_date(신청일자 or hdr.get("신청일자"))
     first_place = items[0]["설치장소"].strip() if items[0].get("설치장소") else ""
     dept = 신청부서 or hdr.get("신청부서") or (first_place.split()[0] if first_place else "창고")
+    applicant = 신청자 or hdr.get("신청자")
+    contact = 연락처 or hdr.get("연락처")
 
-    신청서 = {
-        "신청번호": num,
-        "신청일자": day,
-        "신청부서": dept,
-        "물품목록": items,
-    }
+    if db.query(Application).filter(Application.신청번호 == num).first():
+        raise HTTPException(status_code=409, detail=f"이미 존재하는 신청번호입니다: {num}")
 
-    if not run:
-        return JSONResponse(content={"신청서": 신청서, "결과": None})
-
-    rows = [
-        {
-            "신청번호":   num,
-            "신청일자":   day,
-            "신청부서":   dept,
-            "품명":       it["품명"],
-            "설치장소":   it["설치장소"],
-            "수량":       int(it["수량"]),
-            "필요인원수": int(it["필요인원수"]),
-        }
-        for it in items
-    ]
-    df       = pd.DataFrame(rows)
-    df_avail = pd.read_csv("datas/근로학생시간.csv")
-    results  = run_optimizer(df, df_avail)
-    return JSONResponse(content={"신청서": 신청서, "결과": results})
+    app_row = Application(
+        신청번호=num,
+        신청일자=day,
+        신청부서=dept,
+        신청자=applicant,
+        연락처=contact,
+        원본파일명=file.filename,
+        물품목록=_enrich_items_with_master(items, db),
+        상태="접수",
+        점검완료=False,
+    )
+    db.add(app_row)
+    db.commit()
+    db.refresh(app_row)
+    return _application_to_dict(app_row)
 
 
 # ==========================================
@@ -332,12 +364,8 @@ def update_product(name: str, body: ProductUpdate, db: Session = Depends(get_db)
 # ==========================================
 @app.post("/products/import")
 def import_products_from_s3(body: ImportRequest, db: Session = Depends(get_db)):
-    s3 = boto3.client(
-        "s3",
-        region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    )
+    # 자격증명은 boto3 기본 체인(env → ~/.aws → EC2 IAM 역할)에 맡긴다.
+    s3 = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
     try:
         obj = s3.get_object(Bucket=os.getenv("S3_BUCKET"), Key=body.s3_key)
         df = pd.read_csv(io.BytesIO(obj["Body"].read()), encoding="utf-8-sig")

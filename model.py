@@ -338,6 +338,8 @@ def run_optimizer(df, df_avail):
             for item_name, loc, ppl in gd['items']:
                 output_rows.append({
                     '출동일시':   dispatch_label,
+                    '신청번호':   g,             # 연결 키 (applications.신청번호)
+                    '신청일자':   gd['recv'],     # 접수일자 (YYYY-MM-DD)
                     '품명':       item_name,
                     '설치장소':   loc,
                     '신청부서':   gd['dept'],

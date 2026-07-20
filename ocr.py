@@ -27,6 +27,8 @@ HEADER_SYNONYMS = {
     "신청번호": ["신청번호", "신청서번호", "접수번호", "문서번호"],
     "신청일자": ["신청일자", "접수일자", "신청일", "일자", "작성일"],
     "신청부서": ["신청부서", "신청조직", "부서", "신청기관", "소속"],
+    "신청자":   ["신청자", "신청인", "담당자", "작성자", "성명"],
+    "연락처":   ["연락처", "전화번호", "휴대폰", "핸드폰", "전화", "tel", "hp"],
 }
 
 
@@ -53,12 +55,10 @@ def _to_int(text, default=1):
 
 
 def _get_textract_client():
-    return boto3.client(
-        "textract",
-        region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-    )
+    # 자격증명은 boto3 기본 체인에 맡긴다:
+    # 로컬 .env(환경변수) → ~/.aws → EC2 IAM 역할(인스턴스 프로파일) 순으로 자동 탐색.
+    # 덕분에 로컬(키)·배포(역할) 양쪽에서 코드 수정 없이 동작한다.
+    return boto3.client("textract", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
 
 def _block_text(block, blocks_by_id):

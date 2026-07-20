@@ -167,8 +167,8 @@ id · 품명 · 필요인원수 · created_at · updated_at
 
 ## 9. 구현 순서 (제안)
 
-1. 모델 추가: `applications`(신청자·연락처·점검완료 포함), `schedules` (+ `model.py` 출력 필드 2줄)
-2. `POST /ocr/applications` (OCR 저장) + `ocr.py`에 신청자·연락처 동의어 추가
+1. ✅ 모델 추가: `applications`(신청자·연락처·점검완료 포함), `schedules` (+ `model.py` 출력 필드 2줄) — 완료
+2. ✅ `POST /ocr/applications` (OCR 저장) + `ocr.py`에 신청자·연락처 동의어 추가 — 완료 (`/ocr/optimize` 폐기 반영)
 3. **점검**: `GET /applications/{신청번호}`, `PATCH /applications/{신청번호}`(기본정보·품목별 인원수·점검완료)
 4. `model.py` 랜덤 제거 → 전체 처리 + `POST /optimize/run`(점검완료 대상)
 5. `GET /applications`, `GET /schedules/today`

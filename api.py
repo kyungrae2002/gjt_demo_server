@@ -100,9 +100,12 @@ class ImportRequest(BaseModel):
     s3_key: str
 
 class ApplicationItem(BaseModel):
+    자산번호: Optional[str] = ""
     품명: str
+    규격모델: Optional[str] = ""
     설치장소: Optional[str] = ""
     수량: Optional[int] = 1
+    금액: Optional[str] = ""
     필요인원수: int
 
 class ApplicationPatch(BaseModel):
@@ -115,7 +118,10 @@ class ApplicationPatch(BaseModel):
 
 class SchedulePatch(BaseModel):
     출동일시: Optional[datetime] = None
+    자산번호: Optional[str] = None
     품명: Optional[str] = None
+    규격모델: Optional[str] = None
+    금액: Optional[str] = None
     설치장소: Optional[str] = None
     신청부서: Optional[str] = None
     수량: Optional[int] = None
@@ -224,9 +230,12 @@ def _enrich_items_with_master(items: list, db: Session) -> list:
         master = db.query(Product).filter(Product.품명 == name).first()
         ppl = master.필요인원수 if master else int(it.get("필요인원수") or 1)
         enriched.append({
+            "자산번호":   (it.get("자산번호") or "").strip(),
             "품명":       name,
+            "규격모델":   (it.get("규격모델") or "").strip(),
             "설치장소":   (it.get("설치장소") or "").strip(),
             "수량":       int(it.get("수량") or 1),
+            "금액":       (it.get("금액") or "").strip(),
             "필요인원수": int(ppl),
         })
     return enriched
@@ -357,9 +366,12 @@ def update_application(신청번호: str, body: ApplicationPatch, db: Session = 
         new_items = []
         for it in body.물품목록:
             new_items.append({
+                "자산번호":   (it.자산번호 or "").strip(),
                 "품명":       it.품명.strip(),
+                "규격모델":   (it.규격모델 or "").strip(),
                 "설치장소":   (it.설치장소 or "").strip(),
                 "수량":       int(it.수량 or 1),
+                "금액":       (it.금액 or "").strip(),
                 "필요인원수": int(it.필요인원수),
             })
             # 인원수 수정분을 마스터에 반영 (앞으로 적용)
@@ -419,9 +431,12 @@ def optimize_run(db: Session = Depends(get_db)):
                 "신청번호":   a.신청번호,
                 "신청일자":   a.신청일자,
                 "신청부서":   a.신청부서,
+                "자산번호":   it.get("자산번호", ""),
                 "품명":       it.get("품명", ""),
+                "규격모델":   it.get("규격모델", ""),
                 "설치장소":   it.get("설치장소", ""),
                 "수량":       int(it.get("수량") or 1),
+                "금액":       it.get("금액", ""),
                 "필요인원수": int(it.get("필요인원수") or 1),
             })
 
@@ -441,7 +456,10 @@ def optimize_run(db: Session = Depends(get_db)):
         db.add(Schedule(
             신청번호=r["신청번호"],
             출동일시=_parse_dispatch_label(r["출동일시"]),
+            자산번호=r.get("자산번호"),
             품명=r["품명"],
+            규격모델=r.get("규격모델"),
+            금액=r.get("금액"),
             설치장소=r["설치장소"],
             신청부서=r["신청부서"],
             수량=int(r.get("수량") or 1),
@@ -473,7 +491,10 @@ def _schedule_to_dict(s: Schedule) -> dict:
         "id":              s.id,
         "신청번호":        s.신청번호,
         "출동일시":        s.출동일시,
+        "자산번호":        s.자산번호,
         "품명":            s.품명,
+        "규격모델":        s.규격모델,
+        "금액":            s.금액,
         "설치장소":        s.설치장소,
         "신청부서":        s.신청부서,
         "수량":            s.수량,
@@ -580,8 +601,9 @@ def update_schedule(schedule_id: int, body: SchedulePatch, db: Session = Depends
     s = db.query(Schedule).filter(Schedule.id == schedule_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
-    for field in ("출동일시", "품명", "설치장소", "신청부서", "수량",
-                  "필요인원수", "투입인원수", "가용명단", "출동확정", "동선"):
+    for field in ("출동일시", "자산번호", "품명", "규격모델", "금액", "설치장소",
+                  "신청부서", "수량", "필요인원수", "투입인원수", "가용명단",
+                  "출동확정", "동선"):
         val = getattr(body, field)
         if val is not None:
             setattr(s, field, val)

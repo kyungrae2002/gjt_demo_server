@@ -38,7 +38,10 @@ class Schedule(Base):
     id              = Column(Integer, primary_key=True, index=True)
     신청번호        = Column(String(64), nullable=False, index=True)  # → applications
     출동일시        = Column(DateTime, index=True)  # "오늘 일정" 필터 기준
+    자산번호        = Column(String(64), nullable=True)
     품명            = Column(String(255))
+    규격모델        = Column(String(255), nullable=True)
+    금액            = Column(String(64), nullable=True)
     설치장소        = Column(String(255))
     신청부서        = Column(String(255))
     수량            = Column(Integer, default=1)

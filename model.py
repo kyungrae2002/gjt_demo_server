@@ -43,6 +43,11 @@ def run_optimizer(df, df_avail):
     df = df.reset_index(drop=True)
     COL_PPL = '필요인원수'
 
+    # 스케줄까지 흘려보낼 선택 필드 (신청서에서 온 경우 존재, 없으면 빈 값)
+    for _c in ('자산번호', '규격모델', '금액'):
+        if _c not in df.columns:
+            df[_c] = ''
+
     # ==========================================
     # 2. 근로학생 시간표 로드
     # ==========================================
@@ -102,7 +107,13 @@ def run_optimizer(df, df_avail):
             'deadline_g': date_to_slot(gdf['접수일자'].min()) + SLA_SLOTS - 1,
             'dept':       gdf['신청조직'].iloc[0],
             'recv':       gdf['접수일자'].min().strftime('%Y-%m-%d'),
-            'items':      list(zip(gdf['자산명'], gdf['위치사용명'], p_vals))
+            'items':      [
+                {'품명': n, '설치장소': l, '필요인원수': p,
+                 '자산번호': a, '규격모델': s, '금액': m}
+                for n, l, p, a, s, m in zip(
+                    gdf['자산명'], gdf['위치사용명'], p_vals,
+                    gdf['자산번호'], gdf['규격모델'], gdf['금액'])
+            ]
         }
 
     G = list(G_data.keys())
@@ -329,16 +340,19 @@ def run_optimizer(df, df_avail):
         dispatch_label = slot_to_label(t)
         for g in assigned_g:
             gd = G_data[g]
-            for item_name, loc, ppl in gd['items']:
+            for item in gd['items']:
                 output_rows.append({
                     '출동일시':   dispatch_label,
-                    '신청번호':   g,             # 연결 키 (applications.신청번호)
-                    '신청일자':   gd['recv'],     # 접수일자 (YYYY-MM-DD)
-                    '품명':       item_name,
-                    '설치장소':   loc,
+                    '신청번호':   g,                 # 연결 키 (applications.신청번호)
+                    '신청일자':   gd['recv'],         # 접수일자 (YYYY-MM-DD)
+                    '자산번호':   item['자산번호'],
+                    '품명':       item['품명'],
+                    '규격모델':   item['규격모델'],
+                    '설치장소':   item['설치장소'],
                     '신청부서':   gd['dept'],
                     '수량':       1,
-                    '필요인원수': ppl,
+                    '금액':       item['금액'],
+                    '필요인원수': item['필요인원수'],
                 })
 
     return output_rows

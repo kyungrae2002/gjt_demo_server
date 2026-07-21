@@ -3,7 +3,7 @@ import platform
 import pandas as pd
 import pulp
 import numpy as np
-from datetime import timedelta
+from datetime import timedelta, timezone
 import time
 import csv
 from collections import defaultdict
@@ -58,7 +58,8 @@ def run_optimizer(df, df_avail):
     # 3. 슬롯 달력 생성
     # ==========================================
     # Q6: 출동일시 기준일 = 실행일(오늘). 과거 슬롯이 생기지 않게 한다.
-    ref_date   = pd.Timestamp.today().normalize()
+    # 서버(UTC)가 아닌 한국 시각 기준 오늘. 고정 오프셋 +9(서머타임 없음)로 안전.
+    ref_date   = pd.Timestamp.now(tz=timezone(timedelta(hours=9))).tz_localize(None).normalize()
     ref_monday = ref_date - timedelta(days=ref_date.weekday())
     ref_mon_np = np.datetime64(ref_monday.date())
 

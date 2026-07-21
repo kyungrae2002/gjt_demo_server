@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import yaml
 import pandas as pd
 from fastapi import FastAPI, Depends, HTTPException, Request, File, UploadFile, Form
@@ -16,6 +16,18 @@ from model2 import run_optimizer as run_route_optimizer, split_location_to_build
 from db import get_db, engine, Base
 from models import Product, Application, Schedule
 from ocr import extract_application
+
+# 서버(예: Railway)는 UTC로 실행되므로, 한국 시각을 명시적으로 사용한다.
+# 한국은 서머타임이 없어 고정 오프셋 +9로 안전하며 tzdata 의존도 없다.
+KST = timezone(timedelta(hours=9))
+
+def now_kst() -> datetime:
+    """현재 한국 시각(타임존 인식)."""
+    return datetime.now(KST)
+
+def today_kst() -> date:
+    """오늘 날짜(한국 기준)."""
+    return now_kst().date()
 
 try:
     Base.metadata.create_all(bind=engine)
@@ -178,12 +190,12 @@ def _normalize_date(raw: Optional[str]) -> str:
         parsed = pd.to_datetime(raw, errors="coerce")
         if pd.notna(parsed):
             return parsed.strftime("%Y-%m-%d")
-    return date.today().strftime("%Y-%m-%d")
+    return today_kst().strftime("%Y-%m-%d")
 
 
 def _gen_application_no() -> str:
     """신청번호 미검출 시 자동 생성 (타임스탬프 기반)."""
-    return "OCR-" + datetime.now().strftime("%Y%m%d%H%M%S%f")
+    return "OCR-" + now_kst().strftime("%Y%m%d%H%M%S%f")
 
 
 def _unique_application_no(db: Session, base: Optional[str]) -> str:
@@ -443,7 +455,7 @@ def optimize_run(db: Session = Depends(get_db)):
     # 기존 일정 폐기 후 재작성 (충돌 해소)
     db.query(Schedule).filter(Schedule.신청번호.in_(신청번호s)).delete(synchronize_session=False)
 
-    run_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    run_id = now_kst().strftime("%Y%m%d%H%M%S%f")
     for r in results:
         db.add(Schedule(
             신청번호=r["신청번호"],
@@ -531,7 +543,7 @@ def list_applications(상태: Optional[str] = None, db: Session = Depends(get_db
 @app.get("/schedules/today")
 def schedules_today(db: Session = Depends(get_db)):
     """오늘(출동일시 기준) 수거 일정. 시간대별 렌더링은 프론트에서."""
-    today = date.today()
+    today = today_kst()
     start = datetime(today.year, today.month, today.day)
     end   = start + timedelta(days=1)
     rows = (
@@ -556,7 +568,7 @@ def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depend
     투입인원수는 기본적으로 그 슬롯의 최적화 값(schedules.투입인원수)을 사용하고,
     파라미터로 넘기면 그 값으로 덮어쓴다(선택).
     """
-    today = date.today()
+    today = today_kst()
     start = datetime(today.year, today.month, today.day)
     end   = start + timedelta(days=1)
     rows = (

@@ -1,9 +1,13 @@
 import os
+import glob
+import json
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 import yaml
 import pandas as pd
 from fastapi import FastAPI, Depends, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import JSONResponse, Response, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -45,7 +49,7 @@ ALLOWED_ORIGINS = [
 ]
 
 # Origin 검증·API 키를 건너뛸 경로 (브라우저 주소창에서 직접 여는 문서·헬스체크)
-ORIGIN_EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/openapi.yaml"}
+ORIGIN_EXEMPT_PATHS = {"/health", "/time", "/docs", "/openapi.json", "/openapi.yaml"}
 
 # API 키 인증. .env 의 API_KEY 가 설정된 경우에만 강제한다.
 # 요청 헤더 X-API-Key 값이 일치해야 통과. (curl 등 무단 요청 차단용)
@@ -57,6 +61,10 @@ API_KEY_HEADER = "X-API-Key"
 async def verify_origin(request: Request, call_next):
     # 문서·헬스체크는 브라우저에서 직접 열 수 있어야 하므로 검증 제외
     if request.url.path in ORIGIN_EXEMPT_PATHS:
+        return await call_next(request)
+    # 평면도 이미지 등 정적 에셋은 <img> 태그로 로드되어 헤더를 실을 수 없으므로
+    # Origin·API 키 검증에서 제외한다(민감 정보 아님).
+    if request.url.path.startswith("/route_buildings"):
         return await call_next(request)
     # CORS preflight(OPTIONS)는 CORSMiddleware가 처리하도록 통과
     if request.method == "OPTIONS":
@@ -86,6 +94,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 건물 평면도 이미지 정적 제공 (내비게이션 오버레이용).
+# 예: /route_buildings/국제경영대학관/국경대_1F.png
+if os.path.isdir("route_buildings"):
+    app.mount(
+        "/route_buildings",
+        StaticFiles(directory="route_buildings"),
+        name="route_buildings",
+    )
 
 
 # Swagger UI 에 Authorize(자물쇠) 버튼을 띄워 X-API-Key 를 넣어 테스트할 수 있게 한다.
@@ -154,6 +171,20 @@ class SchedulePatch(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/time")
+def server_time():
+    """서버 시각 확인용. KST(한국) 기준이 올바른지 브라우저에서 바로 볼 수 있다."""
+    utc_now = datetime.now(timezone.utc)
+    kst_now = now_kst()
+    return {
+        "today_kst":    today_kst().isoformat(),          # 예: 2026-07-25
+        "now_kst":      kst_now.strftime("%Y-%m-%d %H:%M:%S"),
+        "now_kst_full": kst_now.isoformat(),              # 오프셋 +09:00 포함
+        "now_utc":      utc_now.strftime("%Y-%m-%d %H:%M:%S"),
+        "tz":           "Asia/Seoul (+09:00)",
+    }
 
 
 # ==========================================
@@ -641,6 +672,185 @@ def update_schedule(schedule_id: int, body: SchedulePatch, db: Session = Depends
     db.commit()
     db.refresh(s)
     return _schedule_to_dict(s)
+
+
+# ==========================================
+# 내비게이션 (평면도 위 경로 오버레이)
+# ==========================================
+# 계산된 동선(Schedule.동선)의 노드 순서를 nodes CSV 좌표 → floor_mapping.json 의
+# scale/offset 으로 이미지 픽셀좌표로 변환해, 층별 평면도 위에 그릴 수 있게 반환한다.
+NAV_BUILDINGS_DIR = "route_buildings"
+NAV_NODES_DIR = "nodes_edges"
+
+# 동선 건물명 → nodes CSV 접두어(철자가 다른 경우만).
+NAV_CSV_ALIAS = {
+    "예술디자인대학": "예디대",
+}
+# 동선 건물명 → route_buildings 폴더명(철자가 다른 경우만).
+NAV_FOLDER_ALIAS = {
+    "예디대": "예술디자인대학",
+}
+# floor_mapping 층키와 이미지 파일 접미어가 어긋나는 건물의 수동 보정.
+# 예: 중앙도서관은 floor_mapping 이 0F/1F 인데 이미지는 B1F/1F 라벨을 쓴다.
+# 값이 확인되면 아래에 "동선건물명": {"층키": "이미지파일명"} 형태로 채운다.
+NAV_FLOOR_IMAGE_OVERRIDE = {
+    # 중앙도서관: floor_mapping 0F 는 실제 지하1층(B1F) 평면도에 캘리브레이션됨
+    # (0F entry image_width/height 1536x1024 == 중도_B1F.png 실측 크기로 확인).
+    "중앙도서관": {"0F": "중도_B1F.png", "1F": "중도_1F.png"},
+}
+
+
+def _nav_read_csv(path: Path):
+    for enc in ("utf-8-sig", "utf-8", "cp949"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError:
+            continue
+    return pd.read_csv(path)
+
+
+def _nav_load_nodes(building: str):
+    """nodes CSV → {node_id: {x, y, floor(int|None), node_type, rooms}}. 없으면 None."""
+    csv_name = NAV_CSV_ALIAS.get(building, building)
+    path = Path(NAV_NODES_DIR) / f"{csv_name}_nodes.csv"
+    if not path.exists():
+        return None
+    df = _nav_read_csv(path)
+    nodes = {}
+    for _, r in df.iterrows():
+        try:
+            floor_int = int(float(r["floor"]))
+        except (ValueError, TypeError):
+            floor_int = None
+        rooms = r.get("assigned_rooms")
+        nodes[str(r["node_id"])] = {
+            "x": float(r["x"]),
+            "y": float(r["y"]),
+            "floor": floor_int,
+            "node_type": None if pd.isna(r.get("node_type")) else str(r.get("node_type")),
+            "rooms": None if pd.isna(rooms) else str(rooms),
+        }
+    return nodes
+
+
+def _nav_load_floor_mapping(folder: str):
+    """floor_mapping.json → {층키: 변환계수}. 최상위 건물키는 철자가 달라 첫 값만 쓴다."""
+    path = Path(NAV_BUILDINGS_DIR) / folder / "floor_mapping.json"
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not data:
+        return None
+    return next(iter(data.values()))
+
+
+def _nav_floor_image(building: str, folder: str, floor_key: str):
+    """층키에 해당하는 평면도 이미지 파일명. 보정표 우선, 없으면 *_{층키}.png 글롭."""
+    override = NAV_FLOOR_IMAGE_OVERRIDE.get(building, {})
+    if floor_key in override:
+        return override[floor_key]
+    matches = glob.glob(str(Path(NAV_BUILDINGS_DIR) / folder / f"*_{floor_key}.png"))
+    return os.path.basename(matches[0]) if matches else None
+
+
+@app.get("/schedules/{schedule_id}/navigation")
+def schedule_navigation(schedule_id: int, db: Session = Depends(get_db)):
+    """
+    한 일정의 실내 수거 동선을 층별 평면도 위 픽셀좌표로 반환한다.
+    - floors[].image_url : /route_buildings/... (정적 제공)
+    - floors[].points    : 방문 순서대로의 노드(픽셀 x/y, 수거/시작 여부)
+    - floors[].path      : 같은 층 노드들을 이은 폴리라인 [[x,y], ...]
+    동선 미계산·데이터 누락 시 상태 필드로 사유를 알린다.
+    """
+    s = db.query(Schedule).filter(Schedule.id == schedule_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
+
+    dongseon = s.동선
+    if not dongseon:
+        return {"schedule_id": schedule_id, "상태": "동선없음",
+                "detail": "아직 출동확정(동선 계산) 전입니다.", "floors": []}
+
+    building = dongseon.get("건물명") or split_location_to_building_room(s.설치장소 or "")[0]
+    if dongseon.get("상태") != "ok":
+        return {"schedule_id": schedule_id, "건물명": building,
+                "상태": dongseon.get("상태", "unknown"), "floors": []}
+
+    folder = NAV_FOLDER_ALIAS.get(building, building)
+    nodes = _nav_load_nodes(building)
+    floor_map = _nav_load_floor_mapping(folder)
+    warnings = []
+
+    if nodes is None:
+        return {"schedule_id": schedule_id, "건물명": building, "상태": "노드데이터없음",
+                "detail": f"nodes_edges/{NAV_CSV_ALIAS.get(building, building)}_nodes.csv 를 찾을 수 없습니다.",
+                "floors": []}
+    if floor_map is None:
+        warnings.append("floor_mapping.json 없음 → 픽셀좌표 변환 불가(이미지만 제공).")
+
+    visit_order = [str(n) for n in (dongseon.get("총방문노드순서") or [])]
+    pickup_set = {str(n) for n in (dongseon.get("수거노드순서") or [])}
+    start_node = dongseon.get("시작노드")
+    start_node = str(start_node) if start_node is not None else None
+
+    floors = {}  # floor_int -> floor dict
+    for order, nid in enumerate(visit_order):
+        info = nodes.get(nid)
+        if info is None or info["floor"] is None:
+            warnings.append(f"노드 {nid}: 좌표/층 정보 없음")
+            continue
+        floor_int = info["floor"]
+        floor_key = f"B{-floor_int}F" if floor_int < 0 else f"{floor_int}F"
+        tf = floor_map.get(floor_key) if floor_map else None
+
+        px = py = None
+        if tf:
+            px = round(info["x"] * tf["scale_x"] + tf["offset_x"], 2)
+            py = round(info["y"] * tf["scale_y"] + tf["offset_y"], 2)
+
+        fl = floors.get(floor_int)
+        if fl is None:
+            fl = {
+                "floor": floor_key,
+                "image_url": None,
+                "image_width": tf.get("image_width") if tf else None,
+                "image_height": tf.get("image_height") if tf else None,
+                "points": [],
+                "path": [],
+            }
+            floors[floor_int] = fl
+
+        fl["points"].append({
+            "node": nid,
+            "order": order,
+            "x": px,
+            "y": py,
+            "node_type": info["node_type"],
+            "rooms": info["rooms"],
+            "is_pickup": nid in pickup_set,
+            "is_start": nid == start_node,
+        })
+        if px is not None:
+            fl["path"].append([px, py])
+
+    for floor_int, fl in floors.items():
+        img = _nav_floor_image(building, folder, fl["floor"])
+        if img:
+            fl["image_url"] = f"/{NAV_BUILDINGS_DIR}/{folder}/{img}"
+        else:
+            warnings.append(f"{fl['floor']} 평면도 이미지 매칭 실패")
+
+    ordered_floors = [floors[k] for k in sorted(floors)]
+    return {
+        "schedule_id": schedule_id,
+        "건물명": building,
+        "상태": "ok",
+        "시작노드": start_node,
+        "수거호수순서": dongseon.get("수거호수순서"),
+        "floors": ordered_floors,
+        "warnings": warnings,
+    }
 
 
 # ==========================================

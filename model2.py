@@ -5,9 +5,9 @@ import heapq
 import json
 import re
 from pathlib import Path
+import pandas as pd
 
 import networkx as nx
-import pandas as pd
 
 
 PARAMS = {
@@ -20,6 +20,55 @@ PARAMS = {
     "elevator_cost": 100.0,
     "return_to_start": True,
     "output_dir": "route_outputs",
+
+    # 입력 JSON의 건물명을 nodes/edges CSV 파일명에 사용하는 표준 건물명으로 변환한다.
+    # 딕셔너리에 없는 장소명은 수거 대상에서 제외한다.
+    "building_name_map": {
+        # 입력 JSON 건물명 -> 코드 내부 건물명(CSV 파일명 기준)
+        "애지원": "애지원",
+        "우정원": "우정원",
+        "공학관": "공학관",
+        "공학실험동": "공학실험동",
+        "체육대학관": "체육대학관",
+        "외국어대학관": "외국어대학관",
+        "멀티미디어교육관": "멀티미디어관",
+        "멀티미디어관": "멀티미디어관",
+        "글로벌관": "글로벌관",
+        "멀티미디어교육관글로벌관": "글로벌관",
+        "도예관": "도예관",
+        "원예생명공학온실": "원예생명공학온실",
+        "선승관": "선승관",
+        "생명과학대학관": "생명과학대학관",
+        "실험연구동A": "실험연구동A",
+        "실험연구동B": "실험연구동B",
+        "예술디자인대학관": "예디대",
+        "예디대": "예디대",
+        "국제경영대학관": "국제경영대학관",
+        "학생회관": "학생회관",
+        "중앙도서관": "중앙도서관",
+        "전자정보/응용과학대학관": "전정대",
+        "전자정보응용과학대학관": "전정대",
+        "전자정보·응용과학대학관": "전정대",
+        "전정대": "전정대",
+        "국제학관": "국제학관",
+        "천문대": "천문대",
+    },
+
+    # 입력 가능 목록에는 있지만 현재 노드/엣지 데이터가 없어 처리하지 않는 건물명.
+    "excluded_building_names": [
+        "원자로센터",
+        "제2기숙사(남)",
+        "제2기숙사(여)",
+        "한방재료가공",
+    ],
+
+    # 요청 호수가 nodes CSV의 assigned_rooms에 없을 때 사용할 건물별 행정실 호수.
+    # 새 건물을 지원하려면 아래 딕셔너리에 "건물명": "행정실 호수"를 추가하면 된다.
+    "admin_office_rooms": {
+        "전정대": "203",
+        "예디대": "214",
+        "애지원": "202",
+    },
 }
 
 
@@ -49,6 +98,24 @@ def normalize_text(x):
     if pd.isna(x):
         return ""
     return re.sub(r"\s+", "", str(x).strip())
+
+
+def normalize_room_key(value):
+    """
+    호수 비교용 키를 만든다.
+    예: 202, 202호, 202.0 -> 모두 '202'
+    """
+    if value is None or pd.isna(value):
+        return ""
+
+    text = normalize_text(value).upper()
+    text = re.sub(r"호$", "", text)
+
+    # CSV에서 숫자 호수가 202.0처럼 읽힌 경우 정리한다.
+    if re.fullmatch(r"-?\d+\.0+", text):
+        text = text.split(".", 1)[0]
+
+    return text
 
 
 def normalize_floor(value):
@@ -128,26 +195,50 @@ def normalize_edge_type(value):
     return text if text else "other"
 
 
-def split_location_to_building_room(location):
-    """설치장소에서 건물명(한글)만 파싱한다. 예:
-    '공학관 401호'                     -> ('공학관', '401호')
-    '도서관102호 (학술연구지원팀)'      -> ('도서관', '102호')
-    '도서관B101호 (자료열람실)'         -> ('도서관', 'B101호')
-    '중앙도서관'                        -> ('중앙도서관', None)
+def normalize_building_key(value):
+    """건물명 비교용 키. 공백과 /, · 같은 구분 기호 차이를 무시한다."""
+    text = normalize_text(value)
+    return re.sub(r"[\/·ㆍ]", "", text)
+
+
+def split_location_to_building_room(location, params=PARAMS):
+    """
+    설치장소의 시작 부분을 건물명 매핑 리스트와 비교해 표준 건물명과 호수를 분리한다.
+    건물명 안에 공백이 있어도 처리하며, 매핑되지 않은 장소는 ("", None)을 반환한다.
     """
     if location is None or pd.isna(location):
         return "", None
-    text = str(location).strip()
-    if not text:
+
+    location_key = normalize_building_key(location)
+    if not location_key:
         return "", None
-    # 1) 뒤쪽 괄호 설명(예: '(학술연구지원팀)') 제거
-    text = re.sub(r"\s*\(.*\)\s*$", "", text).strip()
-    # 2) 끝의 호실(예: '401호', 'B101호', 'B101B호', '102') 제거 → 건물명만 남김
-    building = re.sub(r"\s*[A-Za-z]?\d+[A-Za-z0-9]*호?\s*$", "", text).strip()
-    if not building:  # 전부 호실로 인식된 예외 상황 방지
-        building = text
-    room = text[len(building):].strip() or None
-    return building, room
+
+    # 지원하지 않거나 하나의 건물로 확정할 수 없는 입력은 먼저 제외한다.
+    excluded_keys = sorted(
+        {
+            normalize_building_key(name)
+            for name in params.get("excluded_building_names", [])
+        },
+        key=len,
+        reverse=True,
+    )
+    for excluded_key in excluded_keys:
+        if location_key.startswith(excluded_key):
+            return "", None
+
+    alias_map = params.get("building_name_map", {})
+    normalized_map = {
+        normalize_building_key(alias): canonical
+        for alias, canonical in alias_map.items()
+    }
+
+    # 짧은 건물명이 긴 건물명을 먼저 가로채지 않도록 긴 이름부터 비교한다.
+    for alias_key in sorted(normalized_map, key=len, reverse=True):
+        if location_key.startswith(alias_key):
+            room = location_key[len(alias_key):] or None
+            return normalized_map[alias_key], room
+
+    return "", None
 
 
 def load_json_schedule(input_json_path, params=PARAMS):
@@ -159,11 +250,23 @@ def load_json_schedule(input_json_path, params=PARAMS):
         raise ValueError("JSON 입력에 '신청서' 리스트가 없거나 비어 있습니다.")
 
     rows = []
+    excluded_requests = []
+
     for idx, item in enumerate(requests, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"신청서의 {idx}번째 항목이 객체가 아닙니다: {item}")
 
-        building, room = split_location_to_building_room(item.get("설치장소", ""))
+        building, room = split_location_to_building_room(
+            item.get("설치장소", ""),
+            params,
+        )
+
+        # 매핑 리스트에 없는 장소는 경로 계산 대상에서 제외한다.
+        if not building:
+            excluded = dict(item)
+            excluded["_input_row_id"] = idx
+            excluded_requests.append(excluded)
+            continue
 
         row = dict(item)
         row["_input_row_id"] = idx
@@ -176,10 +279,20 @@ def load_json_schedule(input_json_path, params=PARAMS):
 
     schedule = pd.DataFrame(rows)
 
-    if schedule["_building"].eq("").any():
-        raise ValueError("설치장소에서 건물명을 추출하지 못한 항목이 있습니다.")
+    if schedule.empty:
+        schedule = pd.DataFrame(columns=[
+            "_input_row_id",
+            "_building",
+            "_room",
+            "_quantity",
+            "_required_people",
+            "_dispatch_people",
+        ])
 
-    return schedule, dispatch_people, {"raw_input": data}
+    return schedule, dispatch_people, {
+        "raw_input": data,
+        "excluded_requests": excluded_requests,
+    }
 
 
 def split_assigned_rooms(value):
@@ -203,146 +316,10 @@ def build_room_to_node(nodes):
     for _, row in nodes.iterrows():
         node_id = str(row[node_col]).strip()
         for room in split_assigned_rooms(row[assigned_col]):
-            mapping[normalize_text(room)] = node_id
+            mapping[normalize_room_key(room)] = node_id
     return mapping
 
 
-
-def room_to_number(room):
-    """
-    호수 문자열을 비교 가능한 숫자로 변환한다.
-    예: 329 -> 329, 329-1 -> 329.1, B03 -> -3
-    변환 불가능하면 None을 반환한다.
-    """
-    if room is None or pd.isna(room):
-        return None
-
-    text = str(room).strip().upper()
-    if not text:
-        return None
-
-    # 지하 호수는 B03처럼 들어오는 경우가 있어 음수로 취급한다.
-    basement = text.startswith("B")
-
-    numbers = re.findall(r"\d+", text)
-    if not numbers:
-        return None
-
-    main = int(numbers[0])
-    decimal = 0.0
-    if len(numbers) >= 2:
-        # 329-1 같은 세부 호수는 329.1처럼 약하게 반영한다.
-        decimal = int(numbers[1]) / (10 ** len(numbers[1]))
-
-    value = main + decimal
-    return -value if basement else value
-
-
-def infer_floor_from_room(room):
-    """
-    호수에서 층을 추정한다.
-    예: 329 -> 3층, 566 -> 5층, B03 -> 0층
-    """
-    if room is None or pd.isna(room):
-        return None
-
-    text = str(room).strip().upper()
-    if not text:
-        return None
-
-    if text.startswith("B"):
-        return 0
-
-    match = re.search(r"\d+", text)
-    if not match:
-        return None
-
-    number_text = match.group()
-    if len(number_text) >= 3:
-        return int(number_text[0])
-    if len(number_text) == 2:
-        return int(number_text[0])
-    return None
-
-
-def build_room_candidates(nodes):
-    """
-    nodes의 assigned_rooms를 펼쳐서 대체 매핑 후보 목록을 만든다.
-    """
-    node_col = get_col(nodes, ["node_id"])
-    assigned_col = get_col(nodes, ["assigned_rooms", "assigned_room", "room", "rooms"], required=False)
-    floor_col = get_col(nodes, ["floor", "층", "floor_num"], required=False)
-
-    if assigned_col is None:
-        raise ValueError("nodes 파일에 호수 매핑 컬럼이 없습니다. assigned_rooms 컬럼을 확인하세요.")
-
-    candidates = []
-
-    for _, row in nodes.iterrows():
-        node_id = str(row[node_col]).strip()
-        node_floor = floor_to_int(row[floor_col]) if floor_col is not None else None
-
-        for room in split_assigned_rooms(row[assigned_col]):
-            room_number = room_to_number(room)
-            if room_number is None:
-                continue
-
-            candidates.append({
-                "node": node_id,
-                "room": str(room),
-                "room_key": normalize_text(room),
-                "room_number": room_number,
-                "room_floor": infer_floor_from_room(room),
-                "node_floor": node_floor,
-            })
-
-    return candidates
-
-
-def find_nearest_room_node(request_room, nodes):
-    """
-    요청 호수가 nodes에 정확히 없을 때 가장 가까운 호수를 가진 노드를 찾는다.
-
-    우선순위:
-    1) 요청 호수에서 추정한 층과 같은 층의 후보 우선
-    2) 호수 숫자 차이가 가장 작은 후보
-    3) 같은 차이면 node_id, room 문자열 기준으로 안정적으로 선택
-    """
-    request_number = room_to_number(request_room)
-    request_floor = infer_floor_from_room(request_room)
-
-    if request_number is None:
-        return None
-
-    candidates = build_room_candidates(nodes)
-    if not candidates:
-        return None
-
-    def score(candidate):
-        candidate_floor = candidate.get("node_floor")
-        if candidate_floor is None:
-            candidate_floor = candidate.get("room_floor")
-
-        same_floor_penalty = 0
-        if request_floor is not None and candidate_floor is not None:
-            same_floor_penalty = 0 if request_floor == candidate_floor else 1
-
-        return (
-            same_floor_penalty,
-            abs(candidate["room_number"] - request_number),
-            str(candidate["node"]),
-            str(candidate["room"]),
-        )
-
-    best = min(candidates, key=score)
-    return {
-        "node": best["node"],
-        "nearest_room": best["room"],
-        "distance": abs(best["room_number"] - request_number),
-        "request_room": str(request_room),
-        "request_floor": request_floor,
-        "nearest_floor": best.get("node_floor") if best.get("node_floor") is not None else best.get("room_floor"),
-    }
 
 
 def get_start_nodes(nodes):
@@ -366,29 +343,40 @@ def get_start_nodes(nodes):
     return starts
 
 
-def map_items_to_nodes(building_items, nodes):
+def map_items_to_nodes(building, building_items, nodes, params=PARAMS):
+    """신청 호수를 노드에 매핑하고, 미등록 호수는 해당 건물 행정실로 보낸다."""
     room_to_node = build_room_to_node(nodes)
     items = building_items.copy()
 
-    items["_room_key"] = items["_room"].apply(normalize_text)
+    items["_original_room"] = items["_room"]
+    items["_room_key"] = items["_room"].apply(normalize_room_key)
     items["_node"] = items["_room_key"].map(room_to_node)
-    items["_mapping_type"] = items["_node"].apply(lambda x: "exact" if pd.notna(x) else None)
+    items["_mapping_type"] = items["_node"].apply(
+        lambda node: "exact" if pd.notna(node) else None
+    )
     items["_mapped_room"] = items["_room"]
-    items["_nearest_room"] = None
-    items["_nearest_room_distance"] = None
 
-    # 정확히 매핑되는 호수가 없으면, 가장 가까운 호수를 가진 노드로 대체 매핑한다.
-    # 단, 안내 문구에는 _room, 즉 원래 신청 호수를 그대로 사용한다.
-    for idx, row in items[items["_node"].isna()].iterrows():
-        fallback = find_nearest_room_node(row.get("_room"), nodes)
-        if fallback is None:
-            continue
+    missing_mask = items["_node"].isna()
+    if missing_mask.any():
+        admin_room = params.get("admin_office_rooms", {}).get(building)
+        if admin_room is None:
+            raise ValueError(
+                f"'{building}'의 행정실 호수가 PARAMS['admin_office_rooms']에 없습니다."
+            )
 
-        items.at[idx, "_node"] = fallback["node"]
-        items.at[idx, "_mapping_type"] = "nearest_room"
-        items.at[idx, "_mapped_room"] = row.get("_room")
-        items.at[idx, "_nearest_room"] = fallback["nearest_room"]
-        items.at[idx, "_nearest_room_distance"] = fallback["distance"]
+        admin_room_key = normalize_room_key(admin_room)
+        admin_node = room_to_node.get(admin_room_key)
+        if admin_node is None:
+            raise ValueError(
+                f"'{building}' nodes 파일의 assigned_rooms에 "
+                f"행정실 호수 '{admin_room}'가 없습니다."
+            )
+
+        items.loc[missing_mask, "_room"] = str(admin_room)
+        items.loc[missing_mask, "_room_key"] = admin_room_key
+        items.loc[missing_mask, "_node"] = admin_node
+        items.loc[missing_mask, "_mapping_type"] = "admin_office"
+        items.loc[missing_mask, "_mapped_room"] = str(admin_room)
 
     unmatched = items[items["_node"].isna()].copy()
     matched = items.dropna(subset=["_node"]).copy()
@@ -396,21 +384,19 @@ def map_items_to_nodes(building_items, nodes):
     grouped = (
         matched.groupby("_node")
         .agg(
-            # rooms는 실제 안내해야 하는 신청 호수 기준으로 유지한다.
-            rooms=("_room", lambda x: sorted(set(str(v) for v in x if pd.notna(v)))),
+            rooms=("_room", lambda values: sorted(set(str(v) for v in values if pd.notna(v)))),
             request_count=("_room", "size"),
             total_quantity=("_quantity", "sum"),
             max_required_people=("_required_people", "max"),
             input_row_ids=("_input_row_id", list),
-            mapping_types=("_mapping_type", lambda x: sorted(set(str(v) for v in x if pd.notna(v)))),
-            nearest_rooms=("_nearest_room", lambda x: sorted(set(str(v) for v in x if pd.notna(v) and str(v) != "None"))),
+            mapping_types=("_mapping_type", lambda values: sorted(set(str(v) for v in values if pd.notna(v)))),
+            original_rooms=("_original_room", lambda values: sorted(set(str(v) for v in values if pd.notna(v)))),
         )
         .reset_index()
         .rename(columns={"_node": "node"})
     )
 
     return grouped, matched, unmatched
-
 
 def build_graph(nodes, edges):
     node_col = get_col(nodes, ["node_id"])
@@ -1011,7 +997,7 @@ def load_building_files(building, nodes_edges_dir):
 def solve_building(building, building_items, dispatch_people, params=PARAMS):
     nodes, edges, node_path, edge_path = load_building_files(building, params["nodes_edges_dir"])
 
-    grouped, matched_items, unmatched = map_items_to_nodes(building_items, nodes)
+    grouped, matched_items, unmatched = map_items_to_nodes(building, building_items, nodes, params)
 
     if grouped.empty:
         return {
@@ -1038,7 +1024,8 @@ def solve_building(building, building_items, dispatch_people, params=PARAMS):
             "max_required_people": float(row["max_required_people"]),
             "input_row_ids": row["input_row_ids"],
             "mapping_types": row.get("mapping_types", []),
-            "nearest_rooms": row.get("nearest_rooms", []),
+            "nearest_rooms": [],
+            "original_rooms": row.get("original_rooms", []),
         }
         for _, row in grouped.iterrows()
     }
@@ -1106,20 +1093,22 @@ def build_pickup_item_map(result):
 
     for _, row in matched_items.iterrows():
         node = str(row["_node"])
-        room = str(row["_room"])
+        mapped_room = str(row.get("_mapped_room", row.get("_room", "")))
+        original_room = str(row.get("_original_room", row.get("_room", "")))
         item_name = str(row.get("품명", "물품"))
         quantity = to_float(row.get("수량", 1), 1)
 
         item_map.setdefault(node, [])
         item_map[node].append({
-            # 안내 문구에는 원래 신청 호수를 그대로 사용한다.
-            "호수": room,
+            # 실제 이동 목적지 호수와 사용자가 요청한 원래 호수를 모두 보존한다.
+            "호수": mapped_room,
+            "요청호수": original_room,
             "품명": item_name,
             "수량": quantity,
             "input_row_id": int(row["_input_row_id"]),
             "mapping_type": str(row.get("_mapping_type", "exact")),
-            "nearest_room": None if pd.isna(row.get("_nearest_room")) else str(row.get("_nearest_room")),
-            "nearest_room_distance": None if pd.isna(row.get("_nearest_room_distance")) else float(row.get("_nearest_room_distance")),
+            "nearest_room": None,
+            "nearest_room_distance": None,
         })
 
     return item_map
@@ -1159,20 +1148,80 @@ def make_node_for_ui(node_id, node_lookup, result, pickup_item_map):
     return node
 
 
+def format_room_label(room):
+    room_text = str(room).strip()
+    if not room_text:
+        return ""
+    return room_text if room_text.endswith("호") else f"{room_text}호"
+
+
+def format_quantity(quantity):
+    quantity = float(quantity)
+    if quantity.is_integer():
+        return str(int(quantity))
+    return f"{quantity:g}"
+
+
+def make_admin_redirect_text(node_id, result, pickup_item_map):
+    admin_items = [
+        item for item in pickup_item_map.get(node_id, [])
+        if str(item.get("mapping_type", "")) == "admin_office"
+    ]
+
+    if not admin_items:
+        return ""
+
+    original_rooms = sorted({
+        format_room_label(item.get("요청호수", ""))
+        for item in admin_items
+        if str(item.get("요청호수", "")).strip()
+    })
+
+    if not original_rooms:
+        return "요청하신 위치를 확인할 수 없어 행정실로 안내합니다."
+
+    return (
+        f"요청하신 {', '.join(original_rooms)}의 위치를 확인할 수 없어 "
+        "행정실로 안내합니다."
+    )
+
+
 def make_pickup_text(node_id, result, pickup_item_map):
     items = pickup_item_map.get(node_id, [])
 
     if not items:
         info = result["node_info"].get(node_id, {})
-        rooms = info.get("rooms", [])
+        rooms = [format_room_label(room) for room in info.get("rooms", [])]
         if rooms:
-            return f"{', '.join(map(str, rooms))}호에서 물품을 수거하세요."
+            return f"{', '.join(rooms)}에서 물품을 수거하세요."
         return "물품을 수거하세요."
 
-    rooms = sorted(set(str(item["호수"]) for item in items))
-    item_names = [str(item["품명"]) for item in items]
+    has_admin_mapping = any(
+        str(item.get("mapping_type", "")) == "admin_office"
+        for item in items
+    )
 
-    return f"{', '.join(rooms)}호에서 {', '.join(item_names)}을 수거하세요."
+    if has_admin_mapping:
+        location_text = "행정실"
+    else:
+        rooms = sorted({format_room_label(item["호수"]) for item in items})
+        location_text = ", ".join(rooms)
+
+    # 같은 품명은 한 번만 표시하고 수량을 합산한다.
+    quantity_by_item = {}
+    for item in items:
+        item_name = str(item.get("품명", "물품")).strip() or "물품"
+        quantity_by_item[item_name] = (
+            quantity_by_item.get(item_name, 0.0)
+            + to_float(item.get("수량", 1), 1)
+        )
+
+    item_text = ", ".join(
+        f"{item_name} {format_quantity(quantity)}개"
+        for item_name, quantity in quantity_by_item.items()
+    )
+
+    return f"{location_text}에서 {item_text}를 수거하세요."
 
 
 def make_floor_transition_text(edge, node_lookup):
@@ -1239,10 +1288,16 @@ def build_ordered_route_edges(result, node_lookup):
     ordered_edges = []
 
     for seg in result["detailed"]:
-        for edge in seg["path_edges"]:
-            ordered_edges.append(
-                make_route_edge_for_ui(edge, node_lookup, len(ordered_edges) + 1)
+        for edge_index, edge in enumerate(seg["path_edges"]):
+            ui_edge = make_route_edge_for_ui(
+                edge,
+                node_lookup,
+                len(ordered_edges) + 1,
             )
+            ui_edge["segment_no"] = seg["segment_no"]
+            ui_edge["segment_to_visit_node"] = seg["to_visit_node"]
+            ui_edge["is_segment_start"] = edge_index == 0
+            ordered_edges.append(ui_edge)
 
     return ordered_edges
 
@@ -1261,9 +1316,14 @@ def build_navigation_steps(result):
 
     current_nodes = [result["full_node_path"][0]]
     current_edges = []
+    pending_redirect_notice = ""
 
     def flush_step(step_type, guide_text, trigger_node=None, transition_edges=None):
-        nonlocal current_nodes, current_edges, steps
+        nonlocal current_nodes, current_edges, steps, pending_redirect_notice
+
+        if pending_redirect_notice:
+            guide_text = f"{pending_redirect_notice} {guide_text}"
+            pending_redirect_notice = ""
 
         unique_nodes = []
         seen = set()
@@ -1319,6 +1379,16 @@ def build_navigation_steps(result):
 
     while i < len(ordered_edges):
         edge = ordered_edges[i]
+
+        # 행정실 대체 노드로 향하는 새 구간이 시작되면,
+        # 다음으로 출력되는 이동 안내 앞에 대체 안내 문구를 붙인다.
+        if edge.get("is_segment_start"):
+            destination_node = str(edge.get("segment_to_visit_node", ""))
+            pending_redirect_notice = make_admin_redirect_text(
+                destination_node,
+                result,
+                pickup_item_map,
+            )
 
         # 층 이동 edge를 만나면, 그 edge를 타기 전까지의 같은 층 이동을 먼저 분리
         if edge["is_floor_transition"]:
@@ -1453,7 +1523,7 @@ def build_ui_visualization_dict(result):
             "total_consecutive_stair_edges": result["total_consecutive_stair_edges"],
             "stair_policy": result["stair_policy"],
             "nearest_room_mapping_applied": any(
-                str(v.get("_mapping_type", "")) == "nearest_room"
+                str(v.get("_mapping_type", "")) == "admin_office"
                 for v in result.get("matched_items", pd.DataFrame()).to_dict("records")
             ) if result.get("matched_items") is not None else False,
         },
@@ -1498,24 +1568,75 @@ def print_result(result):
     print("\n✅ 수거 노드")
     for node in result["pickup_node_order"]:
         info = result["node_info"][node]
-        nearest_note = ""
-        if "nearest_room" in info.get("mapping_types", []):
-            nearest_note = f" | 대체매핑기준호수={info.get('nearest_rooms', [])}"
+        admin_note = " | 행정실 대체매핑" if "admin_office" in info.get("mapping_types", []) else ""
 
         print(
             f"- 수거노드={node} | 안내호수={info['rooms']} | "
             f"요청건수={info['request_count']} | 수량합={info['total_quantity']} | "
             f"최대필요인원={info['max_required_people']}"
-            f"{nearest_note}"
+            f"{admin_note}"
         )
+
+
+def run_optimizer(df, _df_avail=None, dispatch_people=None, params=PARAMS):
+    """
+    api.py 진입점. DataFrame 을 받아 건물별 실내 수거 동선을 계산한다.
+    df 컬럼: 신청번호, 품명, 설치장소, 수량, 필요인원수
+    dispatch_people: 투입인원수 (None이면 필요인원수 최댓값)
+    반환: 건물별 UI 시각화 dict 리스트 (build_ui_visualization_dict 형식)
+
+    load_json_schedule 의 DataFrame 판(版)이다. 건물명 매핑·행정실 폴백 등
+    모든 로직을 동일하게 공유하되, 입력만 파일 JSON 대신 DataFrame 을 받는다.
+    """
+    if dispatch_people is None:
+        if "필요인원수" in df.columns and len(df) > 0:
+            dispatch_people = float(pd.to_numeric(df["필요인원수"], errors="coerce").max())
+        else:
+            dispatch_people = float(params["default_dispatch_people"])
+
+    schedule = df.copy().reset_index(drop=True)
+    schedule["_input_row_id"] = schedule.index + 1
+
+    parsed = schedule["설치장소"].apply(lambda loc: split_location_to_building_room(loc, params))
+    schedule["_building"]        = [p[0] for p in parsed]
+    schedule["_room"]            = [p[1] for p in parsed]
+    schedule["_quantity"]        = schedule["수량"].apply(lambda x: to_float(x, 1))
+    schedule["_required_people"] = schedule["필요인원수"].apply(lambda x: to_float(x, 1))
+    schedule["_dispatch_people"] = dispatch_people
+
+    results = []
+    # 건물명 매핑 실패(building_name_map 미등록)는 처리 대상에서 제외한다.
+    valid = schedule[schedule["_building"].astype(str) != ""]
+    for building, building_items in valid.groupby("_building", sort=False):
+        try:
+            result = solve_building(building, building_items.reset_index(drop=True), dispatch_people, params)
+            results.append(build_ui_visualization_dict(result))
+        except Exception as e:
+            print(f"[오류] {building} 처리 실패: {e}")
+            results.append({"건물명": building, "상태": "error", "오류": str(e)})
+
+    return results
 
 
 def main(params=PARAMS):
     schedule, dispatch_people, meta = load_json_schedule(params["input_json_path"], params)
 
+    excluded_requests = meta.get("excluded_requests", [])
+    if excluded_requests:
+        excluded_locations = [
+            str(item.get("설치장소", ""))
+            for item in excluded_requests
+        ]
+        print(
+            f"\n⚠️ 건물명 매핑 실패로 {len(excluded_requests)}건 제외: "
+            + ", ".join(excluded_locations)
+        )
+
     results = []
 
-    for building, building_items in schedule.groupby("_building"):
+    # 같은 건물의 요청을 한 묶음으로 최적화한 뒤 다음 건물을 처리한다.
+    # sort=False로 JSON 입력에 처음 등장한 건물 순서를 유지한다.
+    for building, building_items in schedule.groupby("_building", sort=False):
         try:
             result = solve_building(building, building_items, dispatch_people, params)
         except Exception as e:
@@ -1540,40 +1661,3 @@ def main(params=PARAMS):
 
 if __name__ == "__main__":
     main()
-
-
-# ============================================================
-# API 진입점 (api.py → run_optimizer 호출용)
-# ============================================================
-def run_optimizer(df, _df_avail=None, dispatch_people=None):
-    """
-    api.py에서 호출하는 진입점.
-    df 컬럼: 신청번호, 품명, 설치장소, 수량, 필요인원수
-    dispatch_people: 투입인원수 (None이면 필요인원수 최댓값으로 결정)
-    반환: 건물별 수거 경로 및 내비게이션 steps 리스트
-    """
-    if dispatch_people is None:
-        dispatch_people = float(df["필요인원수"].max()) if "필요인원수" in df.columns else PARAMS["default_dispatch_people"]
-
-    schedule = df.copy().reset_index(drop=True)
-    schedule["_input_row_id"] = schedule.index + 1
-
-    parsed = schedule["설치장소"].apply(split_location_to_building_room)
-    schedule["_building"]        = [p[0] for p in parsed]
-    schedule["_room"]            = [p[1] for p in parsed]
-    schedule["_quantity"]        = schedule["수량"].apply(lambda x: to_float(x, 1))
-    schedule["_required_people"] = schedule["필요인원수"].apply(lambda x: to_float(x, 1))
-    schedule["_dispatch_people"] = dispatch_people
-
-    results = []
-    for building, building_items in schedule.groupby("_building"):
-        try:
-            result = solve_building(building, building_items.reset_index(drop=True), dispatch_people, PARAMS)
-        except Exception as e:
-            print(f"[오류] {building} 처리 실패: {e}")
-            results.append({"건물명": building, "상태": "error", "오류": str(e)})
-            continue
-
-        results.append(build_ui_visualization_dict(result))
-
-    return results

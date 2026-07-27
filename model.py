@@ -81,9 +81,18 @@ def run_optimizer(df, df_avail):
         b = ((s - 1) % 35) + 1
         Avail[s] = avail_base[b]; Avail_names[s] = avail_names[b]
 
+    # 오늘(한국 기준) 날짜. 이보다 과거인 슬롯은 배정 대상에서 제외한다.
+    today_np = np.datetime64(ref_date.date())
+
+    def slot_date_np(t):
+        # 슬롯 t 의 날짜(slot_to_label 과 동일한 계산)
+        return np.busday_offset(ref_mon_np, (t - 1) // 7)
+
     ALLOWED_T = sorted(
         s for s in range(1, max_slot + 1)
-        if Avail[s] > 0 and ((s - 1) % 7) not in FORBIDDEN_IDX
+        if Avail[s] > 0
+        and ((s - 1) % 7) not in FORBIDDEN_IDX
+        and slot_date_np(s) >= today_np      # 과거 날짜 슬롯 제외 (오늘 이후만)
     )
 
     def slot_to_label(t):

@@ -754,14 +754,63 @@ def _nav_floor_image(building: str, folder: str, floor_key: str):
     return os.path.basename(matches[0]) if matches else None
 
 
+# step_type → 프론트 표시 라벨
+NAV_STEP_TYPE_LABEL = {
+    "pickup":                 "수거",
+    "move_to_transition":     "이동",
+    "floor_transition":       "층이동",
+    "floor_transition_pickup": "층이동",
+    "exit":                   "이동",
+}
+
+# canonical(=code) → 표시용 풀네임. 없으면 code 를 그대로 name 으로 쓴다.
+NAV_BUILDING_FULLNAME = {
+    # "전정대": "전자정보대학", "예디대": "예술디자인대학",
+}
+
+
+def _nav_parse_floor_int(floor_key):
+    """'0F'->0, '1F'->1, 'B1F'->-1, '-1F'->-1. 실패 시 None."""
+    if not floor_key:
+        return None
+    s = str(floor_key).upper().rstrip("F")
+    if s.startswith("B"):
+        try:
+            return -int(s[1:])
+        except ValueError:
+            return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
+def _nav_floor_label(floor_key):
+    """'1F'->'1층', 'B1F'->'지하1층'. 파싱 실패 시 원본."""
+    fi = _nav_parse_floor_int(floor_key)
+    if fi is None:
+        return str(floor_key)
+    if fi < 0:
+        return f"지하{-fi}층"
+    return f"{fi}층"
+
+
+def _nav_image_floor_token(filename):
+    """'중도_B1F.png' -> 'B1F'."""
+    return filename.rsplit(".", 1)[0].rsplit("_", 1)[-1]
+
+
 @app.get("/schedules/{schedule_id}/navigation")
 def schedule_navigation(schedule_id: int, db: Session = Depends(get_db)):
     """
-    한 일정의 실내 수거 동선을 층별 평면도 위 픽셀좌표로 반환한다.
-    - floors[].image_url : /route_buildings/... (정적 제공)
-    - floors[].points    : 방문 순서대로의 노드(픽셀 x/y, 수거/시작 여부)
-    - floors[].path      : 같은 층 노드들을 이은 폴리라인 [[x,y], ...]
-    동선 미계산·데이터 누락 시 상태 필드로 사유를 알린다.
+    한 일정의 실내 수거 동선을 '스텝 단위'로 반환한다(스텝당 층 이미지 1장).
+    각 스텝 = 하단 패널 한 장:
+      - guide_text/type_label/floor_label : 완성된 표시 문자열
+      - floor.image_url  : /route_buildings/... (상대경로, 정적 제공)
+      - floor.path       : 도면 픽셀 좌표 점 배열 [{x,y}, ...] (그리는 순서)
+      - floor.nodes      : 찍을 노드(픽셀 x/y, role/kind/label/pickup_items)
+      - floor.route_bbox : 오토센터링용 bbox
+    floor_mapping 이 없는 건물/층은 floor=null(텍스트 스텝)로 내려간다.
     """
     s = db.query(Schedule).filter(Schedule.id == schedule_id).first()
     if not s:
@@ -770,85 +819,146 @@ def schedule_navigation(schedule_id: int, db: Session = Depends(get_db)):
     dongseon = s.동선
     if not dongseon:
         return {"schedule_id": schedule_id, "상태": "동선없음",
-                "detail": "아직 출동확정(동선 계산) 전입니다.", "floors": []}
+                "detail": "아직 출동확정(동선 계산) 전입니다.", "steps": []}
 
     building = dongseon.get("건물명") or split_location_to_building_room(s.설치장소 or "")[0]
+    building_obj = {"name": NAV_BUILDING_FULLNAME.get(building, building), "code": building}
     if dongseon.get("상태") != "ok":
-        return {"schedule_id": schedule_id, "건물명": building,
-                "상태": dongseon.get("상태", "unknown"), "floors": []}
+        return {"schedule_id": schedule_id, "building": building_obj,
+                "상태": dongseon.get("상태", "unknown"), "steps": []}
 
     folder = NAV_FOLDER_ALIAS.get(building, building)
-    nodes = _nav_load_nodes(building)
+    coords = _nav_load_nodes(building)          # id -> {x,y,floor(int),...} (path 좌표 조회용)
     floor_map = _nav_load_floor_mapping(folder)
     warnings = []
-
-    if nodes is None:
-        return {"schedule_id": schedule_id, "건물명": building, "상태": "노드데이터없음",
-                "detail": f"nodes_edges/{NAV_CSV_ALIAS.get(building, building)}_nodes.csv 를 찾을 수 없습니다.",
-                "floors": []}
+    warned = set()
     if floor_map is None:
-        warnings.append("floor_mapping.json 없음 → 픽셀좌표 변환 불가(이미지만 제공).")
+        warnings.append("floor_mapping.json 없음 → 모든 스텝을 텍스트로 제공(좌표/이미지 없음).")
 
-    visit_order = [str(n) for n in (dongseon.get("총방문노드순서") or [])]
-    pickup_set = {str(n) for n in (dongseon.get("수거노드순서") or [])}
-    start_node = dongseon.get("시작노드")
-    start_node = str(start_node) if start_node is not None else None
+    out_steps = []
+    for st in (dongseon.get("steps") or []):
+        floor_key = st.get("floor")
+        floor_int = _nav_parse_floor_int(floor_key)
+        step_out = {
+            "step_no":     st.get("step_no"),
+            "step_type":   st.get("step_type"),
+            "guide_text":  st.get("guide_text"),
+            "type_label":  NAV_STEP_TYPE_LABEL.get(st.get("step_type"), "이동"),
+            "floor_label": _nav_floor_label(floor_key) if floor_key else None,
+            "is_last_step": bool(st.get("is_last_step")),
+            "floor":       None,   # 좌표 변환 가능할 때만 채운다
+        }
 
-    floors = {}  # floor_int -> floor dict
-    for order, nid in enumerate(visit_order):
-        info = nodes.get(nid)
-        if info is None or info["floor"] is None:
-            warnings.append(f"노드 {nid}: 좌표/층 정보 없음")
+        tf = floor_map.get(floor_key) if (floor_map and floor_key) else None
+        if tf is None:
+            # 텍스트 전용 스텝 (floor_mapping 없거나 해당 층 미보정)
+            if floor_map is not None and floor_key and floor_key not in warned:
+                warnings.append(f"{floor_key} 층은 floor_mapping 에 없어 텍스트로 제공")
+                warned.add(floor_key)
+            out_steps.append(step_out)
             continue
-        floor_int = info["floor"]
-        floor_key = f"B{-floor_int}F" if floor_int < 0 else f"{floor_int}F"
-        tf = floor_map.get(floor_key) if floor_map else None
 
-        px = py = None
-        if tf:
-            px = round(info["x"] * tf["scale_x"] + tf["offset_x"], 2)
-            py = round(info["y"] * tf["scale_y"] + tf["offset_y"], 2)
+        def to_px(x, y):
+            return (round(x * tf["scale_x"] + tf["offset_x"], 2),
+                    round(y * tf["scale_y"] + tf["offset_y"], 2))
 
-        fl = floors.get(floor_int)
-        if fl is None:
-            fl = {
-                "floor": floor_key,
-                "image_url": None,
-                "image_width": tf.get("image_width") if tf else None,
-                "image_height": tf.get("image_height") if tf else None,
-                "points": [],
-                "path": [],
-            }
-            floors[floor_int] = fl
+        # 이 스텝의 '대상 층'에 있는 노드만 렌더 (층이동 스텝은 도착층만)
+        step_nodes_raw = [n for n in (st.get("nodes") or []) if n.get("floor") == floor_key]
+        n_count = len(step_nodes_raw)
+        nodes_out = []
+        for i, n in enumerate(step_nodes_raw):
+            px, py = to_px(n["x"], n["y"])
+            if n.get("is_elevator"):
+                kind = "elevator"
+            elif n.get("is_stair"):
+                kind = "stair"
+            else:
+                kind = "normal"
+            # role: 스텝 경로의 시작/끝
+            if n_count == 1:
+                role = "end"
+            elif i == 0:
+                role = "start"
+            elif i == n_count - 1:
+                role = "end"
+            else:
+                role = None
+            # pickup_items: room = 요청호수(원래 신청 호수) — 표시용
+            pit = []
+            for it in (n.get("pickup_items") or []):
+                q = it.get("수량")
+                try:
+                    q = int(q) if float(q).is_integer() else float(q)
+                except (TypeError, ValueError):
+                    pass
+                pit.append({
+                    "room": str(it.get("요청호수") or it.get("호수") or ""),
+                    "name": it.get("품명"),
+                    "qty":  q,
+                })
+            label = None
+            if pit:
+                rooms = sorted({p["room"] for p in pit if p["room"]})
+                label = ", ".join(
+                    r if str(r).endswith("호") else f"{r}호" for r in rooms
+                ) or None
+            nodes_out.append({
+                "id": n.get("id"),
+                "x": px, "y": py,
+                "role": role,
+                "kind": kind,
+                "label": label,
+                "pickup_items": pit,
+            })
 
-        fl["points"].append({
-            "node": nid,
-            "order": order,
-            "x": px,
-            "y": py,
-            "node_type": info["node_type"],
-            "rooms": info["rooms"],
-            "is_pickup": nid in pickup_set,
-            "is_start": nid == start_node,
-        })
-        if px is not None:
-            fl["path"].append([px, py])
+        # path: node_sequence 중 이 층 노드만 순서대로 (되돌아오는 구간 포함)
+        path = []
+        for nid in (st.get("node_sequence") or []):
+            info = coords.get(str(nid)) if coords else None
+            if info and info.get("floor") == floor_int:
+                px, py = to_px(info["x"], info["y"])
+                path.append({"x": px, "y": py})
 
-    for floor_int, fl in floors.items():
-        img = _nav_floor_image(building, folder, fl["floor"])
+        # route_bbox (path 없으면 노드 좌표로 대체)
+        bbox = None
+        pts = path if path else [{"x": n["x"], "y": n["y"]} for n in nodes_out]
+        if pts:
+            xs = [p["x"] for p in pts]
+            ys = [p["y"] for p in pts]
+            bbox = {"x": min(xs), "y": min(ys),
+                    "w": round(max(xs) - min(xs), 2), "h": round(max(ys) - min(ys), 2)}
+
+        img = _nav_floor_image(building, folder, floor_key)
+        image_url = None
+        floor_id = floor_key
+        floor_label = step_out["floor_label"]
         if img:
-            fl["image_url"] = f"/{NAV_BUILDINGS_DIR}/{folder}/{img}"
-        else:
-            warnings.append(f"{fl['floor']} 평면도 이미지 매칭 실패")
+            image_url = f"/{NAV_BUILDINGS_DIR}/{folder}/{img}"
+            token = _nav_image_floor_token(img)   # 이미지 라벨과 표시를 일치시킴(B1F 등)
+            floor_id = token
+            floor_label = _nav_floor_label(token)
+        elif floor_key not in warned:
+            warnings.append(f"{floor_key} 평면도 이미지 매칭 실패")
+            warned.add(floor_key)
 
-    ordered_floors = [floors[k] for k in sorted(floors)]
+        step_out["floor_label"] = floor_label
+        step_out["floor"] = {
+            "id": floor_id,
+            "label": floor_label,
+            "image_url": image_url,
+            "image_width": tf.get("image_width"),
+            "image_height": tf.get("image_height"),
+            "path": path,
+            "nodes": nodes_out,
+            "route_bbox": bbox,
+        }
+        out_steps.append(step_out)
+
     return {
         "schedule_id": schedule_id,
-        "건물명": building,
+        "building": building_obj,
         "상태": "ok",
-        "시작노드": start_node,
-        "수거호수순서": dongseon.get("수거호수순서"),
-        "floors": ordered_floors,
+        "steps": out_steps,
         "warnings": warnings,
     }
 

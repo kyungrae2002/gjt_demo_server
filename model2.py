@@ -46,6 +46,7 @@ PARAMS = {
         "국제경영대학관": "국제경영대학관",
         "학생회관": "학생회관",
         "중앙도서관": "중앙도서관",
+        "도서관": "중앙도서관",
         "전자정보/응용과학대학관": "전정대",
         "전자정보응용과학대학관": "전정대",
         "전자정보·응용과학대학관": "전정대",
@@ -209,7 +210,11 @@ def split_location_to_building_room(location, params=PARAMS):
     if location is None or pd.isna(location):
         return "", None
 
-    location_key = normalize_building_key(location)
+    # 뒤쪽 괄호 설명(부서명 등)을 먼저 제거한다.
+    # 예: '도서관301호 (산학협력단/…)' -> '도서관301호'
+    cleaned = re.sub(r"\s*\(.*\)\s*$", "", str(location)).strip()
+
+    location_key = normalize_building_key(cleaned)
     if not location_key:
         return "", None
 

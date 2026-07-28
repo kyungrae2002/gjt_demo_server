@@ -757,6 +757,7 @@ def _nav_floor_image(building: str, folder: str, floor_key: str):
 # step_type → 프론트 표시 라벨
 NAV_STEP_TYPE_LABEL = {
     "pickup":                 "수거",
+    "move_to_pickup":         "이동",
     "move_to_transition":     "이동",
     "floor_transition":       "층이동",
     "floor_transition_pickup": "층이동",

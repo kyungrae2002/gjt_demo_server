@@ -1229,6 +1229,24 @@ def make_pickup_text(node_id, result, pickup_item_map):
     return f"{location_text}에서 {item_text}를 수거하세요"
 
 
+def make_move_to_pickup_text(node_id, result, pickup_item_map):
+    """수거지까지의 같은 층 이동 안내 문구. 예: '103호로 이동하세요'."""
+    items = pickup_item_map.get(node_id, [])
+    has_admin_mapping = any(
+        str(item.get("mapping_type", "")) == "admin_office" for item in items
+    )
+    if has_admin_mapping:
+        location_text = "행정실"
+    elif items:
+        rooms = sorted({format_room_label(item["호수"]) for item in items})
+        location_text = ", ".join(rooms)
+    else:
+        info = result["node_info"].get(node_id, {})
+        rooms = [format_room_label(room) for room in info.get("rooms", [])]
+        location_text = ", ".join(rooms) if rooms else "수거지"
+    return f"{location_text}로 이동하세요"
+
+
 def floor_display(floor_str):
     """가이드 문구용 층 표시. 지하는 B 표기로: 0F->B1F, -1F->B2F. 1F 이상은 그대로."""
     s = str(floor_str).strip().upper()
@@ -1476,9 +1494,16 @@ def build_navigation_steps(result):
         append_edge_to_current(edge)
         v = edge["to"]
 
-        # 일반 이동 중 수거 노드에 도착하면 pickup step으로 묶음
+        # 일반 이동 중 수거 노드에 도착하면
         if v in pickup_nodes and v not in visited_pickups:
             visited_pickups.add(v)
+            # ① 수거지까지의 '이동'을 별도 스텝으로 분리 → 프론트가 그 구간 지도를 그린다
+            flush_step(
+                step_type="move_to_pickup",
+                guide_text=make_move_to_pickup_text(v, result, pickup_item_map),
+                trigger_node=v,
+            )
+            # ② '수거' 스텝은 수거지 노드만 (이동 없음)
             flush_step(
                 step_type="pickup",
                 guide_text=make_pickup_text(v, result, pickup_item_map),

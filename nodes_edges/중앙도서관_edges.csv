@@ -42,7 +42,7 @@ E54,N40,N48,stair,
 E55,N33,N43,stair,
 E56,N32,N42,elevator,
 ,,,,
-E4,N5,N9,walk,48.09
+E4,N5,N7,walk,88.55
 E5,N7,N6,walk,160.11
 E6,N6,N8,walk,368.01
 E7,N9,N8,walk,172.01

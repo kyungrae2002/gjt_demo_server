@@ -413,7 +413,7 @@ def update_application(app_id: int, body: ApplicationPatch, db: Session = Depend
             _upsert_product_master(db, it.품명, it.필요인원수)
         app_row.물품목록 = new_items
 
-    if body.점검완료 is not None:
+    if body.점검  is not None:
         app_row.점검완료 = body.점검완료
 
     db.commit()
@@ -867,7 +867,13 @@ def schedule_navigation(schedule_id: int, db: Session = Depends(get_db)):
         n_count = len(step_nodes_raw)
         nodes_out = []
         for i, n in enumerate(step_nodes_raw):
-            px, py = to_px(n["x"], n["y"])
+            # 마커 좌표는 CSV(nodes)에서 매번 새로 읽는다 → 좌표 수정 시 재최적화 없이 즉시 반영.
+            # (경로선 path 도 동일하게 CSV 를 읽으므로 마커·선이 항상 일치)
+            info_csv = coords.get(str(n.get("id"))) if coords else None
+            if info_csv:
+                px, py = to_px(info_csv["x"], info_csv["y"])
+            else:
+                px, py = to_px(n["x"], n["y"])   # 폴백: CSV 에 없으면 저장된 좌표 사용
             if n.get("is_elevator"):
                 kind = "elevator"
             elif n.get("is_stair"):

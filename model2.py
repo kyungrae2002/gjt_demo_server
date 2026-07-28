@@ -1198,8 +1198,8 @@ def make_pickup_text(node_id, result, pickup_item_map):
         info = result["node_info"].get(node_id, {})
         rooms = [format_room_label(room) for room in info.get("rooms", [])]
         if rooms:
-            return f"{', '.join(rooms)}에서 물품을 수거하세요."
-        return "물품을 수거하세요."
+            return f"{', '.join(rooms)}에서 물품을 수거하세요"
+        return "물품을 수거하세요"
 
     has_admin_mapping = any(
         str(item.get("mapping_type", "")) == "admin_office"
@@ -1226,12 +1226,23 @@ def make_pickup_text(node_id, result, pickup_item_map):
         for item_name, quantity in quantity_by_item.items()
     )
 
-    return f"{location_text}에서 {item_text}를 수거하세요."
+    return f"{location_text}에서 {item_text}를 수거하세요"
+
+
+def floor_display(floor_str):
+    """가이드 문구용 층 표시. 지하는 B 표기로: 0F->B1F, -1F->B2F. 1F 이상은 그대로."""
+    s = str(floor_str).strip().upper()
+    m = re.fullmatch(r"(-?\d+)F", s)
+    if m:
+        n = int(m.group(1))
+        if n <= 0:
+            return f"B{1 - n}F"
+    return s
 
 
 def make_floor_transition_text(edge, node_lookup):
     v = str(edge["to"])
-    to_floor = node_lookup[v]["floor"] if v in node_lookup else ""
+    to_floor = floor_display(node_lookup[v]["floor"]) if v in node_lookup else ""
     edge_type = str(edge.get("edge_type", "")).lower()
 
     if edge_type == "stair":
@@ -1246,7 +1257,7 @@ def make_floor_transition_text(edge, node_lookup):
 
 def make_floor_transition_pickup_text(edge, node_lookup, node_id, result, pickup_item_map):
     v = str(edge["to"])
-    to_floor = node_lookup[v]["floor"] if v in node_lookup else ""
+    to_floor = floor_display(node_lookup[v]["floor"]) if v in node_lookup else ""
     edge_type = str(edge.get("edge_type", "")).lower()
 
     if edge_type == "stair":

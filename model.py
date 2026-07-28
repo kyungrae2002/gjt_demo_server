@@ -135,6 +135,7 @@ def run_optimizer(df, df_avail):
     feasible_gt = [
         (g, t) for g in G for t in ALLOWED_T
         if t >= G_data[g]['min_r_g']
+        and t <= G_data[g]['deadline_g']
         and Avail[t] >= G_data[g]['max_p_g']
     ]
     feasible_T = sorted(set(t for _, t in feasible_gt))
@@ -157,7 +158,7 @@ def run_optimizer(df, df_avail):
         '사색': 25, '전자정보': 31, '응용과학': 31, '국제학관': 32, '천문대': 33, '창고': 34
     }
     try:
-        dist_df = pd.read_excel(r'datas/건물간 거리_창고 추가.xlsx', index_col=0)
+        dist_df = pd.read_excel(r'datas/건물간거리_창고 추가.xlsx', index_col=0)
         _all_dists = [float(dist_df.loc[i, c]) for i in dist_df.index for c in dist_df.columns if pd.notna(dist_df.loc[i, c]) and float(dist_df.loc[i, c]) > 0]
         AVG_DIST_M = sum(_all_dists) / len(_all_dists) if _all_dists else 750.0
     except Exception as e:
@@ -230,6 +231,7 @@ def run_optimizer(df, df_avail):
     model = pulp.LpProblem("Logistics_v2", pulp.LpMinimize)
 
     U        = pulp.LpVariable.dicts("U", feasible_gt, cat='Binary')
+    unassigned = pulp.LpVariable.dicts("unassigned", G, cat='Binary')
     x        = pulp.LpVariable.dicts("x", feasible_T, cat='Binary')
     N        = pulp.LpVariable.dicts("N", feasible_T, lowBound=0, cat='Integer')
     overflow = pulp.LpVariable.dicts("overflow", feasible_T, lowBound=0)
@@ -251,12 +253,31 @@ def run_optimizer(df, df_avail):
     # ==========================================
     # 8. 목적함수
     # ==========================================
+    # 5영업일 안에 모든 신청서를 넣을 수 없는 경우 모델 전체를 실패시키지 않고
+    # 가능한 신청서를 최대한 많이 배정한다. 미배정 1건의 페널티를 모든 양의
+    # 비용 상한보다 크게 잡아, 비용 절감 때문에 배정을 포기하는 일은 막는다.
+    max_delay_cost = sum(
+        max(
+            (w_quad * ((t - G_data[g]['min_r_g']) ** 2) for t in g2slots[g]),
+            default=0,
+        )
+        for g in G
+    )
+    max_positive_cost = (
+        sum(alpha_g.values())
+        + beta * MAX_STAFF * len(feasible_T)
+        + max_delay_cost
+        + sum(G_data[g]['L_g'] for g in G) * max(OV_TIER_RATES)
+    )
+    UNASSIGNED_PENALTY = int(max_positive_cost) + 1
+
     model += (
         pulp.lpSum(alpha_g[g] * U[(g,t)] for (g,t) in feasible_gt) -
         pulp.lpSum(savings_g1_g2[(g1, g2)] * y_pair[(g1, g2, t)] for (g1, g2, t) in pair_feasible) +
         beta  * pulp.lpSum(N[t] for t in feasible_T) +
         w_quad * pulp.lpSum(((t - G_data[g]['min_r_g'])**2) * U[(g,t)] for (g,t) in feasible_gt) +
-        pulp.lpSum(OV_TIER_RATES[k] * ov_tier[(t, k)] for t in feasible_T for k in range(N_TIERS))
+        pulp.lpSum(OV_TIER_RATES[k] * ov_tier[(t, k)] for t in feasible_T for k in range(N_TIERS)) +
+        UNASSIGNED_PENALTY * pulp.lpSum(unassigned[g] for g in G)
     ), "Total_Cost"
 
     # ==========================================
@@ -266,8 +287,9 @@ def run_optimizer(df, df_avail):
         slots_g = g2slots[g]
         if not slots_g:
             print(f"[경고] 신청서 {g}: 가능한 슬롯 없음")
-            continue
-        model += pulp.lpSum(U[(g, t)] for t in slots_g) == 1, f"Completion_{g}"
+        model += (
+            pulp.lpSum(U[(g, t)] for t in slots_g) + unassigned[g] == 1
+        ), f"Completion_{g}"
 
     for (g, t) in feasible_gt:
         model += N[t] >= G_data[g]['max_p_g'] * U[(g, t)], f"MinStaff_{g}_{t}"
@@ -329,11 +351,21 @@ def run_optimizer(df, df_avail):
     t0 = time.time()
     model.solve(_get_cbc_solver(timeLimit=120, msg=0, gapRel=0.05))
     elapsed = time.time() - t0
+    status_name = pulp.LpStatus[model.status]
 
     print(f">> 소요 시간   : {elapsed:.1f}초")
-    print(f">> 최적화 상태 : {pulp.LpStatus[model.status]}")
+    print(f">> 최적화 상태 : {status_name}")
     if pulp.value(model.objective):
         print(f">> 최소 비용   : {int(pulp.value(model.objective)):,}원")
+    if status_name != "Optimal":
+        raise RuntimeError(f"최적해를 찾지 못했습니다: {status_name}")
+
+    unassigned_groups = [
+        g for g in G
+        if pulp.value(unassigned[g]) is not None and pulp.value(unassigned[g]) > 0.5
+    ]
+    if unassigned_groups:
+        print(f"[경고] 5영업일 내 미배정 신청서 {len(unassigned_groups)}개: {unassigned_groups}")
 
     # ==========================================
     # 11. 결과 수집

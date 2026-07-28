@@ -370,7 +370,7 @@ def update_application(app_id: int, body: ApplicationPatch, db: Session = Depend
     점검 단계: 기본정보(신청번호/신청일자/신청부서/신청자/연락처)와 품목별 인원수를 수정하고
     점검완료 처리한다.
 
-    - 신청번호를 바꾸면 유니크 검사 후 반영한다. (점검 단계엔 아직 일정이 없어 안전)
+    - 신청번호를 바꾸면 유니크 검사 후 applications와 기존 schedules에 함께 반영한다.
     - 물품목록의 필요인원수를 수정하면 products 마스터도 upsert(품명 기준) → 이후 신청서에 일반 적용.
       (이미 저장된 다른 신청서 스냅샷은 소급 변경하지 않음)
     """
@@ -386,6 +386,12 @@ def update_application(app_id: int, body: ApplicationPatch, db: Session = Depend
             Application.신청번호 == new_no, Application.id != app_id
         ).first():
             raise HTTPException(status_code=409, detail=f"이미 존재하는 신청번호입니다: {new_no}")
+
+        old_no = app_row.신청번호
+        db.query(Schedule).filter(Schedule.신청번호 == old_no).update(
+            {Schedule.신청번호: new_no},
+            synchronize_session=False,
+        )
         app_row.신청번호 = new_no
 
     if body.신청일자 is not None:
@@ -413,7 +419,7 @@ def update_application(app_id: int, body: ApplicationPatch, db: Session = Depend
             _upsert_product_master(db, it.품명, it.필요인원수)
         app_row.물품목록 = new_items
 
-    if body.점검  is not None:
+    if body.점검완료 is not None:
         app_row.점검완료 = body.점검완료
 
     db.commit()
@@ -505,17 +511,22 @@ def optimize_run(db: Session = Depends(get_db)):
             출동확정=False,
         ))
 
-    # 실제 배정된 신청서만 일정확정 처리 (슬롯 못 잡은 건 접수 상태 유지)
+    # 실제 배정된 신청서만 일정확정 처리하고, 재최적화에서 슬롯을 잡지 못한
+    # 신청서는 기존 상태가 일정확정이었더라도 접수로 되돌린다.
     scheduled_nums = {r["신청번호"] for r in results}
     for a in apps:
         if a.신청번호 in scheduled_nums:
             a.상태 = "일정확정"
+        else:
+            a.상태 = "접수"
 
     db.commit()
+    unscheduled_nums = sorted(a.신청번호 for a in apps if a.신청번호 not in scheduled_nums)
     return {
         "optimize_run_id": run_id,
         "대상_신청서수":   len(apps),
         "일정확정_신청서": sorted(scheduled_nums),
+        "미배정_신청서":   unscheduled_nums,
         "일정_행수":       len(results),
     }
 

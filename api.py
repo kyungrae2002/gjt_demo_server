@@ -19,7 +19,7 @@ from model import run_optimizer
 from model2 import run_optimizer as run_route_optimizer, split_location_to_building_room
 from db import get_db, engine, Base
 from models import Product, Application, Schedule
-from ocr import extract_application
+from ocr import OCR_MAX_IMAGES, extract_application
 
 # 서버(예: Railway)는 UTC로 실행되므로, 한국 시각을 명시적으로 사용한다.
 # 한국은 서머타임이 없어 고정 오프셋 +9로 안전하며 tzdata 의존도 없다.
@@ -282,7 +282,7 @@ def _application_to_dict(app: Application) -> dict:
 
 @app.post("/ocr/applications")
 async def create_application_from_ocr(
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(..., alias="file"),
     신청번호: Optional[str] = Form(None),
     신청일자: Optional[str] = Form(None),
     신청부서: Optional[str] = Form(None),
@@ -291,19 +291,35 @@ async def create_application_from_ocr(
     db: Session = Depends(get_db),
 ):
     """
-    신청서 이미지(PNG/JPEG/TIFF)를 업로드하면
-    비전 LLM(OpenRouter)으로 기본정보·품목 표를 추출해 applications 에 저장한다. (상태=접수, 점검완료=false)
+    신청서 이미지(PNG/JPEG/TIFF)를 하나 이상 업로드하면, 같은 multipart `file` 필드의 이미지를
+    하나의 신청서로 묶어 비전 LLM(OpenRouter)으로 기본정보·품목 표를 추출해 applications 에 저장한다.
+    (상태=접수, 점검완료=false)
 
+    - 기존처럼 `file` 한 장만 보내도 동작한다. 여러 장은 `file` 필드를 반복해서 보낸다.
     - 헤더 필드(신청번호/신청일자/신청부서/신청자/연락처)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
     - 각 품목 필요인원수는 products 마스터(품명) 값으로 채운다. (없으면 OCR값→1)
     - 이후 [점검] 단계에서 기본정보·인원수를 확인·수정한다.
     """
-    file_bytes = await file.read()
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="빈 파일입니다.")
+    if not files:
+        raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다.")
+    if len(files) > OCR_MAX_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"한 신청서에는 최대 {OCR_MAX_IMAGES}장까지 업로드할 수 있습니다.",
+        )
+
+    file_bytes_list = []
+    filenames = []
+    for file in files:
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail=f"빈 파일입니다: {file.filename or '(파일명 없음)'}")
+        file_bytes_list.append(file_bytes)
+        if file.filename:
+            filenames.append(file.filename)
 
     try:
-        parsed = extract_application(file_bytes)
+        parsed = extract_application(file_bytes_list)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"OCR 처리 실패: {e}")
 
@@ -329,7 +345,8 @@ async def create_application_from_ocr(
         신청부서=dept,
         신청자=applicant,
         연락처=contact,
-        원본파일명=file.filename,
+        # 컬럼 호환성을 유지하기 위해 여러 원본 이름은 쉼표로 저장한다.
+        원본파일명=", ".join(filenames) or None,
         물품목록=_enrich_items_with_master(items, db),
         상태="접수",
         점검완료=False,

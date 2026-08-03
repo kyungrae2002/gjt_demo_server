@@ -840,6 +840,7 @@ NAV_CSV_ALIAS = {
 # 동선 건물명 → route_buildings 폴더명(철자가 다른 경우만).
 NAV_FOLDER_ALIAS = {
     "예디대": "예술디자인대학",
+    "전정대": "전자정보대학",
 }
 # floor_mapping 층키와 이미지 파일 접미어가 어긋나는 건물의 수동 보정.
 # 예: 중앙도서관은 floor_mapping 이 0F/1F 인데 이미지는 B1F/1F 라벨을 쓴다.

@@ -28,6 +28,35 @@
       "image_width": 1672,
       "image_height": 941,
       "saved_at": "2026-07-09T04:49:48.266Z"
+    },
+    "2F": {
+      "building": "애지원",
+      "floor": "2F",
+      "node_a": "N7",
+      "node_b": "N12",
+      "node_a_coord": [
+        491,
+        688
+      ],
+      "node_b_coord": [
+        1554,
+        556
+      ],
+      "node_a_pixel": [
+        493.81,
+        700.22
+      ],
+      "node_b_pixel": [
+        1562.81,
+        472.22
+      ],
+      "scale_x": 1.0056444026340545,
+      "scale_y": 1.7272727272727273,
+      "offset_x": 0.03859830667920505,
+      "offset_y": -488.14363636363646,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-03T11:18:26.897Z"
     }
   }
 }

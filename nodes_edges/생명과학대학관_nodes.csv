@@ -1,4 +1,4 @@
-node_id,node_type,floor,x,y,assigned_rooms,
+node_id,node_type,floor,x,y,assigned_rooms,start_node
 N1,stair,0,289,109,,
 N2,stair,0,709,236,,
 N3,corridor,0,75,197,B114;B115,

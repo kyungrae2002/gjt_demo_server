@@ -4,3 +4,4 @@ __pycache__/
 datas/출동결과.csv
 .env
 *.pem
+test/demo.sqlite3

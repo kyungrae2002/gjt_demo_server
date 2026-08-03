@@ -17,9 +17,15 @@ from pydantic import BaseModel
 
 from model import run_optimizer
 from model2 import run_optimizer as run_route_optimizer, split_location_to_building_room
-from db import get_db, engine, Base
+from db import get_db, SessionLocal, engine, Base
 from models import Product, Application, Schedule
 from ocr import OCR_MAX_IMAGES, extract_application
+from demo_store import (
+    DEMO_MODE,
+    load_demo_ocr_result,
+    load_demo_source_images,
+    seed_demo_data,
+)
 
 # 서버(예: Railway)는 UTC로 실행되므로, 한국 시각을 명시적으로 사용한다.
 # 한국은 서머타임이 없어 고정 오프셋 +9로 안전하며 tzdata 의존도 없다.
@@ -95,6 +101,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # 건물 평면도 이미지 정적 제공 (내비게이션 오버레이용).
 # 예: /route_buildings/국제경영대학관/국경대_1F.png
 if os.path.isdir("route_buildings"):
@@ -114,6 +121,29 @@ def custom_openapi():
         "ApiKeyAuth": {"type": "apiKey", "in": "header", "name": API_KEY_HEADER}
     }
     schema["security"] = [{"ApiKeyAuth": []}]
+
+    # Optional[List[UploadFile]]는 OpenAPI 3.1에서 contentMediaType으로 생성된다.
+    # 일부 Swagger UI가 이를 일반 텍스트 입력으로 그려 파일 바이트를 문자열로 전송하므로,
+    # 호환성이 넓은 binary 파일 배열 스키마로 보정한다. required에 넣지 않아 파일은 선택이다.
+    ocr_body = (
+        schema.get("paths", {})
+        .get("/ocr/applications", {})
+        .get("post", {})
+        .get("requestBody", {})
+        .get("content", {})
+        .get("multipart/form-data", {})
+        .get("schema", {})
+    )
+    ref = ocr_body.get("$ref", "")
+    if ref.startswith("#/components/schemas/"):
+        ocr_body = schema["components"]["schemas"].get(ref.rsplit("/", 1)[-1], {})
+    if "file" in ocr_body.get("properties", {}):
+        ocr_body["properties"]["file"] = {
+            "type": "array",
+            "items": {"type": "string", "format": "binary"},
+            "title": "File",
+        }
+
     app.openapi_schema = schema
     return schema
 
@@ -170,12 +200,25 @@ class SchedulePatch(BaseModel):
 # ==========================================
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    if DEMO_MODE:
+        return {"status": "ok", "demo_mode": True}
+    return {"status": "ok", "demo_mode": DEMO_MODE}
 
 
 @app.get("/time")
 def server_time():
     """서버 시각 확인용. KST(한국) 기준이 올바른지 브라우저에서 바로 볼 수 있다."""
+    if DEMO_MODE:
+        # 시연도 실제 서버 시간을 반환해 프론트의 오늘 일정 필터와 동일하게 동작시킨다.
+        utc_now = datetime.now(timezone.utc)
+        kst_now = now_kst()
+        return {
+            "today_kst":    today_kst().isoformat(),
+            "now_kst":      kst_now.strftime("%Y-%m-%d %H:%M:%S"),
+            "now_kst_full": kst_now.isoformat(),
+            "now_utc":      utc_now.strftime("%Y-%m-%d %H:%M:%S"),
+            "tz":           "Asia/Seoul (+09:00)",
+        }
     utc_now = datetime.now(timezone.utc)
     kst_now = now_kst()
     return {
@@ -265,7 +308,27 @@ def _enrich_items_with_master(items: list, db: Session) -> list:
     return enriched
 
 
-def _application_to_dict(app: Application) -> dict:
+@app.on_event("startup")
+def seed_demo_database_on_startup():
+    """시연 DB에 OCR fixture와 실제 최적화·동선 실행 결과를 최초 한 번만 입력한다."""
+    if not DEMO_MODE:
+        return
+    db = SessionLocal()
+    try:
+        app_row, created = seed_demo_data(db, _enrich_items_with_master, _unique_application_no)
+        if created:
+            print(f"[DEMO] 로컬 DB에 fixture 신청서 생성: id={app_row.id}")
+        result = _ensure_demo_execution_results(db, app_row)
+        if result:
+            print(
+                "[DEMO] 실제 실행 결과 저장: "
+                f"일정={result['일정_행수']}건, 동선건물={result['동선_건물수']}개"
+            )
+    finally:
+        db.close()
+
+
+def _application_to_dict(app: Application, dispatch_time: Optional[datetime] = None) -> dict:
     return {
         "id":         app.id,
         "신청번호":   app.신청번호,
@@ -277,12 +340,24 @@ def _application_to_dict(app: Application) -> dict:
         "물품목록":   app.물품목록,
         "상태":       app.상태,
         "점검완료":   app.점검완료,
+        "출동일시":   dispatch_time,
     }
+
+
+def _first_dispatch_time(db: Session, application_no: str) -> Optional[datetime]:
+    """신청서의 최초 출동일시. 일정이 아직 없으면 None."""
+    from sqlalchemy import func as safunc
+
+    return (
+        db.query(safunc.min(Schedule.출동일시))
+        .filter(Schedule.신청번호 == application_no)
+        .scalar()
+    )
 
 
 @app.post("/ocr/applications")
 async def create_application_from_ocr(
-    files: List[UploadFile] = File(..., alias="file"),
+    files: Optional[List[UploadFile]] = File(None, alias="file"),
     신청번호: Optional[str] = Form(None),
     신청일자: Optional[str] = Form(None),
     신청부서: Optional[str] = Form(None),
@@ -299,29 +374,37 @@ async def create_application_from_ocr(
     - 헤더 필드(신청번호/신청일자/신청부서/신청자/연락처)는 폼 값으로 넘기면 OCR 결과보다 우선한다.
     - 각 품목 필요인원수는 products 마스터(품명) 값으로 채운다. (없으면 OCR값→1)
     - 이후 [점검] 단계에서 기본정보·인원수를 확인·수정한다.
+    - DEMO_MODE=true이면 파일·폼 값과 무관하게 test fixture의 시연 결과를 사용한다.
     """
-    if not files:
-        raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다.")
-    if len(files) > OCR_MAX_IMAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"한 신청서에는 최대 {OCR_MAX_IMAGES}장까지 업로드할 수 있습니다.",
-        )
+    if DEMO_MODE:
+        # 첨부 유무·폼 값과 무관하게 고정 OCR 결과를 사용한다. 다만 아래부터는 일반 API와
+        # 같은 DB 저장 경로를 타므로 생성된 신청서는 실제 로컬 SQLite 상태가 된다.
+        parsed = load_demo_ocr_result()
+        filenames = load_demo_source_images()
+        신청번호 = 신청일자 = 신청부서 = 신청자 = 연락처 = None
+    else:
+        if not files:
+            raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다.")
+        if len(files) > OCR_MAX_IMAGES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"한 신청서에는 최대 {OCR_MAX_IMAGES}장까지 업로드할 수 있습니다.",
+            )
 
-    file_bytes_list = []
-    filenames = []
-    for file in files:
-        file_bytes = await file.read()
-        if not file_bytes:
-            raise HTTPException(status_code=400, detail=f"빈 파일입니다: {file.filename or '(파일명 없음)'}")
-        file_bytes_list.append(file_bytes)
-        if file.filename:
-            filenames.append(file.filename)
+        file_bytes_list = []
+        filenames = []
+        for file in files:
+            file_bytes = await file.read()
+            if not file_bytes:
+                raise HTTPException(status_code=400, detail=f"빈 파일입니다: {file.filename or '(파일명 없음)'}")
+            file_bytes_list.append(file_bytes)
+            if file.filename:
+                filenames.append(file.filename)
 
-    try:
-        parsed = extract_application(file_bytes_list)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"OCR 처리 실패: {e}")
+        try:
+            parsed = extract_application(file_bytes_list)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"OCR 처리 실패: {e}")
 
     items = parsed["items"]
     if not items:
@@ -374,11 +457,11 @@ def _upsert_product_master(db: Session, 품명: str, 필요인원수: int):
 
 @app.get("/applications/{app_id}")
 def get_application(app_id: int, db: Session = Depends(get_db)):
-    """점검용 상세 조회(id로 식별): 기본정보 + 품목별 인원수."""
+    """점검용 상세 조회(id로 식별): 기본정보 + 품목별 인원수 + 최초 출동일시."""
     app_row = db.query(Application).filter(Application.id == app_id).first()
     if not app_row:
         raise HTTPException(status_code=404, detail="신청서를 찾을 수 없습니다.")
-    return _application_to_dict(app_row)
+    return _application_to_dict(app_row, _first_dispatch_time(db, app_row.신청번호))
 
 
 @app.patch("/applications/{app_id}")
@@ -441,7 +524,7 @@ def update_application(app_id: int, body: ApplicationPatch, db: Session = Depend
 
     db.commit()
     db.refresh(app_row)
-    return _application_to_dict(app_row)
+    return _application_to_dict(app_row, _first_dispatch_time(db, app_row.신청번호))
 
 
 @app.patch("/applications/{app_id}/complete")
@@ -453,7 +536,7 @@ def complete_application(app_id: int, db: Session = Depends(get_db)):
     app_row.상태 = "완료"
     db.commit()
     db.refresh(app_row)
-    return _application_to_dict(app_row)
+    return _application_to_dict(app_row, _first_dispatch_time(db, app_row.신청번호))
 
 
 # ==========================================
@@ -591,8 +674,7 @@ def list_applications(상태: Optional[str] = None, db: Session = Depends(get_db
 
     result = []
     for a in apps:
-        d = _application_to_dict(a)
-        d["출동일시"] = dispatch.get(a.신청번호)
+        d = _application_to_dict(a, dispatch.get(a.신청번호))
         result.append(d)
 
     result.sort(key=lambda x: (x["출동일시"] is None, x["출동일시"] or datetime.max))
@@ -614,31 +696,8 @@ def schedules_today(db: Session = Depends(get_db)):
     return [_schedule_to_dict(s) for s in rows]
 
 
-# ==========================================
-# 오늘 출동 확정 (건물별 동선 계산·저장) + 일정 수정
-# ==========================================
-@app.post("/dispatch/confirm")
-def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depends(get_db)):
-    """
-    오늘 출동 일정을 확정한다. **출동일시(시간 슬롯) 단위로 묶어**, 슬롯마다 건물별 실내
-    수거 동선(model2)을 따로 계산해 각 일정에 저장하고 출동확정=true로 표시한다.
-    (같은 건물이라도 다른 시간대 출동은 별개 동선으로 계산된다.)
-
-    투입인원수는 기본적으로 그 슬롯의 최적화 값(schedules.투입인원수)을 사용하고,
-    파라미터로 넘기면 그 값으로 덮어쓴다(선택).
-    """
-    today = today_kst()
-    start = datetime(today.year, today.month, today.day)
-    end   = start + timedelta(days=1)
-    rows = (
-        db.query(Schedule)
-        .filter(Schedule.출동일시 >= start, Schedule.출동일시 < end)
-        .order_by(Schedule.출동일시)
-        .all()
-    )
-    if not rows:
-        raise HTTPException(status_code=400, detail="오늘 출동할 일정이 없습니다.")
-
+def _calculate_dispatch_routes(rows: list[Schedule], 투입인원수: Optional[int] = None) -> dict:
+    """일정 행에 기존 출동 API와 동일한 실제 동선 계산 결과를 채운다."""
     # 출동일시(시간 슬롯)로 묶는다 = 한 번의 출동 단위
     slots = {}
     for s in rows:
@@ -681,8 +740,72 @@ def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depend
             "동선":     route_results,
         })
 
-    db.commit()
     return {"확정_일정수": len(rows), "출동_슬롯수": len(slots), "슬롯별": 슬롯별}
+
+
+def _ensure_demo_execution_results(db: Session, app_row: Application) -> Optional[dict]:
+    """초기 데모 신청서에 실제 점검→최적화→동선 실행 결과를 저장한다.
+
+    이미 일정이 있으면 사용자가 API로 만든 로컬 상태를 그대로 보존한다. 최초 fixture 상태처럼
+    일정이 전혀 없을 때만 현재 날짜로 점검을 완료하고 운영 API와 같은 함수를 실행한다.
+    """
+    existing = db.query(Schedule).filter(Schedule.신청번호 == app_row.신청번호).first()
+    if existing:
+        return None
+
+    # 원본 OCR 날짜는 fixture에 그대로 보존되어 있다. 실제 최적화는 과거 슬롯을 배정하지
+    # 않으므로, 점검 단계에서 신청일자를 오늘로 확인한 상태를 로컬 DB에 반영한다.
+    app_row.신청일자 = today_kst().isoformat()
+    app_row.점검완료 = True
+    app_row.상태 = "접수"
+    db.commit()
+
+    optimization = optimize_run(db)
+    schedules = (
+        db.query(Schedule)
+        .filter(Schedule.신청번호 == app_row.신청번호)
+        .order_by(Schedule.출동일시, Schedule.id)
+        .all()
+    )
+    if not schedules:
+        raise RuntimeError("데모 실제 최적화 결과에 배정된 일정이 없습니다.")
+
+    dispatch = _calculate_dispatch_routes(schedules)
+    db.commit()
+    return {
+        "일정_행수": optimization["일정_행수"],
+        "동선_건물수": sum(slot["건물수"] for slot in dispatch["슬롯별"]),
+    }
+
+
+# ==========================================
+# 오늘 출동 확정 (건물별 동선 계산·저장) + 일정 수정
+# ==========================================
+@app.post("/dispatch/confirm")
+def dispatch_confirm(투입인원수: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    오늘 출동 일정을 확정한다. **출동일시(시간 슬롯) 단위로 묶어**, 슬롯마다 건물별 실내
+    수거 동선(model2)을 따로 계산해 각 일정에 저장하고 출동확정=true로 표시한다.
+    (같은 건물이라도 다른 시간대 출동은 별개 동선으로 계산된다.)
+
+    투입인원수는 기본적으로 그 슬롯의 최적화 값(schedules.투입인원수)을 사용하고,
+    파라미터로 넘기면 그 값으로 덮어쓴다(선택).
+    """
+    today = today_kst()
+    start = datetime(today.year, today.month, today.day)
+    end   = start + timedelta(days=1)
+    rows = (
+        db.query(Schedule)
+        .filter(Schedule.출동일시 >= start, Schedule.출동일시 < end)
+        .order_by(Schedule.출동일시)
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=400, detail="오늘 출동할 일정이 없습니다.")
+
+    result = _calculate_dispatch_routes(rows, 투입인원수)
+    db.commit()
+    return result
 
 
 @app.patch("/schedules/{schedule_id}")

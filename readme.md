@@ -106,6 +106,72 @@ https://xxxx-xxxx-xxxx.trycloudflare.com
 
 ---
 
+### 인증 API
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | `/auth/signup` | 조직 생성(관리자) 또는 입장 코드 참여(작업자) 계정 생성 |
+| POST | `/auth/login` | 로그인 및 Bearer 액세스 토큰 발급 |
+| POST | `/auth/forgot-password` | 이메일로 일회용 비밀번호 재설정 링크 발송 |
+| POST | `/auth/reset-password` | 일회용 토큰으로 새 비밀번호 설정 |
+| POST | `/auth/find-id` | 이름과 이메일로 마스킹된 아이디 찾기 |
+
+관리자가 조직을 만들며 계정을 생성하는 예시:
+
+```json
+{
+  "username": "gildong",
+  "password": "password123",
+  "full_name": "홍길동",
+  "email": "gildong@example.com",
+  "organization_mode": "create",
+  "organization_name": "관재팀"
+}
+```
+
+작업자가 관리자가 공유한 6자리 입장 코드로 참여하는 예시:
+
+```json
+{
+  "username": "worker01",
+  "password": "password123",
+  "full_name": "김작업",
+  "email": "worker@example.com",
+  "organization_mode": "join",
+  "entry_code": "ABC234"
+}
+```
+
+관리자는 로그인 응답에서 입장 코드를 확인할 수 있고, 작업자는 같은 조직의 신청서·일정·
+작업 기록만 조회합니다. `/workers/status/today`와 인원 추천·확정 API는 관리자만 사용할 수 있습니다.
+
+### 개인화 피로도 API
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | `/fatigue/predict` | 현재 작업 특성으로 개인별 작업 후 Borg와 설문 필요 여부 예측 |
+| POST | `/work-sessions` | 실제 Borg와 사전 예측값을 분리해 개인 작업 기록 저장 |
+| GET | `/workers/status/today` | 관리자 조직의 실제/예측 Borg, 당일 누적부하 조회 |
+
+개인 모델은 실제 Borg 8회 이상, 사전 예측 검증 5회 이상, 최근 5회 MAE 1.0 이하가 모두
+유지되면 설문을 자동 생략합니다. 그전에는 실제 응답을 받아 모델을 계속 검증합니다.
+
+로그인 요청 예시:
+
+```json
+{
+  "username": "gildong",
+  "password": "password123"
+}
+```
+
+비밀번호 재설정 메일 발송에는 `.env.example`의 SMTP 설정이 필요합니다. 로컬 개발에서는
+`PASSWORD_RESET_RETURN_TOKEN=true`로 설정하면 메일 대신 응답의 `reset_token`을
+`POST /auth/reset-password`에 전달해 흐름을 확인할 수 있습니다. 운영에서는 이 옵션을
+활성화하지 마세요.
+
+---
+
 ### GET /health
 서버 상태 확인
 

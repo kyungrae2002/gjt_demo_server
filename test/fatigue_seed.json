@@ -1,0 +1,25 @@
+{
+  "feature_schema_version": "work-cycle-v1",
+  "description": "관리자 화면과 초기 예측 흐름을 확인하기 위한 경험 기반 유사 테스트 데이터. 실제 응답으로 간주하지 않는다.",
+  "samples": [
+    {"work_minutes": 15, "total_minutes": 28, "driving_minutes": 10, "unknown_minutes": 3, "item_count": 1, "labor_load": 1, "team_size": 2, "borg_cr10": 1.8},
+    {"work_minutes": 22, "total_minutes": 38, "driving_minutes": 12, "unknown_minutes": 4, "item_count": 2, "labor_load": 2, "team_size": 2, "borg_cr10": 2.4},
+    {"work_minutes": 30, "total_minutes": 48, "driving_minutes": 14, "unknown_minutes": 4, "item_count": 3, "labor_load": 4, "team_size": 2, "borg_cr10": 3.1},
+    {"work_minutes": 38, "total_minutes": 60, "driving_minutes": 17, "unknown_minutes": 5, "item_count": 4, "labor_load": 6, "team_size": 2, "borg_cr10": 4.0},
+    {"work_minutes": 45, "total_minutes": 69, "driving_minutes": 18, "unknown_minutes": 6, "item_count": 5, "labor_load": 7, "team_size": 3, "borg_cr10": 4.3},
+    {"work_minutes": 55, "total_minutes": 82, "driving_minutes": 20, "unknown_minutes": 7, "item_count": 6, "labor_load": 9, "team_size": 3, "borg_cr10": 5.2},
+    {"work_minutes": 68, "total_minutes": 98, "driving_minutes": 22, "unknown_minutes": 8, "item_count": 8, "labor_load": 12, "team_size": 3, "borg_cr10": 6.3},
+    {"work_minutes": 82, "total_minutes": 116, "driving_minutes": 24, "unknown_minutes": 10, "item_count": 10, "labor_load": 16, "team_size": 4, "borg_cr10": 7.1},
+    {"work_minutes": 35, "total_minutes": 55, "driving_minutes": 15, "unknown_minutes": 5, "item_count": 5, "labor_load": 8, "team_size": 4, "borg_cr10": 3.4},
+    {"work_minutes": 50, "total_minutes": 74, "driving_minutes": 18, "unknown_minutes": 6, "item_count": 7, "labor_load": 11, "team_size": 4, "borg_cr10": 4.5},
+    {"work_minutes": 62, "total_minutes": 91, "driving_minutes": 21, "unknown_minutes": 8, "item_count": 9, "labor_load": 14, "team_size": 4, "borg_cr10": 5.5},
+    {"work_minutes": 78, "total_minutes": 111, "driving_minutes": 24, "unknown_minutes": 9, "item_count": 12, "labor_load": 18, "team_size": 4, "borg_cr10": 6.8}
+  ],
+  "worker_baselines": [
+    {"worker_name": "김경언", "baseline_borg_cr10": 2.8},
+    {"worker_name": "최현", "baseline_borg_cr10": 3.4},
+    {"worker_name": "박우민", "baseline_borg_cr10": 4.2},
+    {"worker_name": "정하람", "baseline_borg_cr10": 3.1},
+    {"worker_name": "강경래", "baseline_borg_cr10": 3.7}
+  ]
+}

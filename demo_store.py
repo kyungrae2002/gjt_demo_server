@@ -61,6 +61,7 @@ def seed_demo_data(
     db: Session,
     enrich_items: Callable[[list, Session], list],
     unique_application_no: Callable[[Session, str | None], str],
+    organization_id: int,
 ) -> tuple[Application, bool]:
     """비어 있는 시연 DB에 fixture 한 묶음을 한 번만 심는다.
 
@@ -69,22 +70,33 @@ def seed_demo_data(
     """
     fixture = _load_fixture()
     marker = fixture.get("source_marker") or "[DEMO] fixture"
-    existing = db.query(Application).filter(Application.원본파일명 == marker).first()
+    existing = db.query(Application).filter(
+        Application.organization_id == organization_id,
+        Application.원본파일명 == marker,
+    ).first()
     if existing:
         return existing, False
 
     for product in fixture.get("products", []):
         name = str(product.get("품명") or "").strip()
-        if not name or db.query(Product).filter(Product.품명 == name).first():
+        if not name or db.query(Product).filter(
+            Product.organization_id == organization_id,
+            Product.품명 == name,
+        ).first():
             continue
-        db.add(Product(품명=name, 필요인원수=int(product.get("필요인원수") or 1)))
+        db.add(Product(
+            organization_id=organization_id,
+            품명=name,
+            필요인원수=int(product.get("필요인원수") or 1),
+        ))
     db.flush()
 
     parsed = fixture["application"]
     header = parsed.get("header") or {}
-    items = enrich_items(parsed.get("items") or [], db)
+    items = enrich_items(parsed.get("items") or [], db, organization_id)
     first_place = items[0].get("설치장소", "") if items else ""
     row = Application(
+        organization_id=organization_id,
         신청번호=unique_application_no(db, header.get("신청번호")),
         신청일자=header.get("신청일자") or "",
         신청부서=header.get("신청부서") or (first_place.split()[0] if first_place else "창고"),

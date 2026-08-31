@@ -57,6 +57,180 @@
       "image_width": 1254,
       "image_height": 1254,
       "saved_at": "2026-07-31T17:36:18.365Z"
+    },
+    "0F": {
+      "building": "전자정보대학",
+      "floor": "0F",
+      "node_a": "N3",
+      "node_b": "N8",
+      "node_a_coord": [
+        392,
+        499
+      ],
+      "node_b_coord": [
+        1230,
+        431
+      ],
+      "node_a_pixel": [
+        506.12,
+        634.69
+      ],
+      "node_b_pixel": [
+        1632.65,
+        548.98
+      ],
+      "scale_x": 1.3443078758949882,
+      "scale_y": 1.2604411764705887,
+      "offset_x": -20.84868735083535,
+      "offset_y": 5.729852941176318,
+      "image_width": 1942,
+      "image_height": 809,
+      "saved_at": "2026-08-29T11:54:12.342Z"
+    },
+    "3F": {
+      "building": "전자정보대학",
+      "floor": "3F",
+      "node_a": "N54",
+      "node_b": "N61",
+      "node_a_coord": [
+        133,
+        150
+      ],
+      "node_b_coord": [
+        975,
+        945
+      ],
+      "node_a_pixel": [
+        125.53,
+        172.34
+      ],
+      "node_b_pixel": [
+        967.02,
+        1105.32
+      ],
+      "scale_x": 0.999394299287411,
+      "scale_y": 1.1735597484276727,
+      "offset_x": -7.389441805225658,
+      "offset_y": -3.693962264150912,
+      "image_width": 1145,
+      "image_height": 1374,
+      "saved_at": "2026-08-29T11:56:14.059Z"
+    },
+    "4F": {
+      "building": "전자정보대학",
+      "floor": "4F",
+      "node_a": "N75",
+      "node_b": "N82",
+      "node_a_coord": [
+        122,
+        160
+      ],
+      "node_b_coord": [
+        972,
+        959
+      ],
+      "node_a_pixel": [
+        106.12,
+        183.67
+      ],
+      "node_b_pixel": [
+        993.33,
+        1118.33
+      ],
+      "scale_x": 1.0437764705882353,
+      "scale_y": 1.1697872340425532,
+      "offset_x": -21.220729411764708,
+      "offset_y": -3.4959574468085464,
+      "image_width": 1145,
+      "image_height": 1374,
+      "saved_at": "2026-08-29T11:57:42.825Z"
+    },
+    "5F": {
+      "building": "전자정보대학",
+      "floor": "5F",
+      "node_a": "N98",
+      "node_b": "N106",
+      "node_a_coord": [
+        114,
+        147
+      ],
+      "node_b_coord": [
+        975,
+        946
+      ],
+      "node_a_pixel": [
+        105,
+        180
+      ],
+      "node_b_pixel": [
+        1025,
+        1123.33
+      ],
+      "scale_x": 1.0685249709639955,
+      "scale_y": 1.1806382978723404,
+      "offset_x": -16.811846689895475,
+      "offset_y": 6.4461702127659635,
+      "image_width": 1145,
+      "image_height": 1374,
+      "saved_at": "2026-08-29T11:59:13.474Z"
+    },
+    "6F": {
+      "building": "전자정보대학",
+      "floor": "6F",
+      "node_a": "N110",
+      "node_b": "N118",
+      "node_a_coord": [
+        203,
+        408
+      ],
+      "node_b_coord": [
+        1170,
+        279
+      ],
+      "node_a_pixel": [
+        259.62,
+        546.15
+      ],
+      "node_b_pixel": [
+        1576.19,
+        376.19
+      ],
+      "scale_x": 1.3614994829369185,
+      "scale_y": 1.3175193798449611,
+      "offset_x": -16.764395036194458,
+      "offset_y": 8.602093023255861,
+      "image_width": 1942,
+      "image_height": 809,
+      "saved_at": "2026-08-29T12:00:24.405Z"
+    },
+    "7F": {
+      "building": "전자정보대학",
+      "floor": "7F",
+      "node_a": "N120",
+      "node_b": "N127",
+      "node_a_coord": [
+        204,
+        509
+      ],
+      "node_b_coord": [
+        1186,
+        347
+      ],
+      "node_a_pixel": [
+        268.75,
+        635.42
+      ],
+      "node_b_pixel": [
+        1585.71,
+        426.19
+      ],
+      "scale_x": 1.3410997963340123,
+      "scale_y": 1.291543209876543,
+      "offset_x": -4.834358452138531,
+      "offset_y": -21.975493827160335,
+      "image_width": 1942,
+      "image_height": 809,
+      "saved_at": "2026-08-29T12:01:32.486Z"
     }
   }
 }

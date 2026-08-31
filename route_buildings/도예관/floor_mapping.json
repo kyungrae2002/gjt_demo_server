@@ -1,0 +1,91 @@
+{
+  "도예관": {
+    "0F": {
+      "building": "도예관",
+      "floor": "0F",
+      "node_a": "N6",
+      "node_b": "N2",
+      "node_a_coord": [
+        223,
+        197
+      ],
+      "node_b_coord": [
+        679,
+        303
+      ],
+      "node_a_pixel": [
+        76.79,
+        446.43
+      ],
+      "node_b_pixel": [
+        1521.43,
+        733.93
+      ],
+      "scale_x": 3.1680701754385967,
+      "scale_y": 2.712264150943396,
+      "offset_x": -629.689649122807,
+      "offset_y": -87.88603773584902,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T09:39:03.278Z"
+    },
+    "1F": {
+      "building": "도예관",
+      "floor": "1F",
+      "node_a": "N14",
+      "node_b": "N11",
+      "node_a_coord": [
+        205,
+        107
+      ],
+      "node_b_coord": [
+        316,
+        257
+      ],
+      "node_a_pixel": [
+        475,
+        241.07
+      ],
+      "node_b_pixel": [
+        725,
+        569.64
+      ],
+      "scale_x": 2.2522522522522523,
+      "scale_y": 2.1904666666666666,
+      "offset_x": 13.288288288288243,
+      "offset_y": 6.690066666666667,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T09:42:15.325Z"
+    },
+    "2F": {
+      "building": "도예관",
+      "floor": "2F",
+      "node_a": "N20",
+      "node_b": "N17",
+      "node_a_coord": [
+        182,
+        196
+      ],
+      "node_b_coord": [
+        697,
+        261
+      ],
+      "node_a_pixel": [
+        414.29,
+        450
+      ],
+      "node_b_pixel": [
+        1576.79,
+        569.64
+      ],
+      "scale_x": 2.2572815533980584,
+      "scale_y": 1.8406153846153843,
+      "offset_x": 3.464757281553375,
+      "offset_y": 89.23938461538467,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T09:43:57.787Z"
+    }
+  }
+}

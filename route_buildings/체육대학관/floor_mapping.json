@@ -1,0 +1,149 @@
+{
+  "체육대학관": {
+    "1F": {
+      "building": "체육대학관",
+      "floor": "1F",
+      "node_a": "N18",
+      "node_b": "N15",
+      "node_a_coord": [
+        86,
+        68
+      ],
+      "node_b_coord": [
+        575,
+        199
+      ],
+      "node_a_pixel": [
+        244.44,
+        228.89
+      ],
+      "node_b_pixel": [
+        1728.89,
+        611.11
+      ],
+      "scale_x": 3.035685071574642,
+      "scale_y": 2.9177099236641224,
+      "offset_x": -16.628916155419233,
+      "offset_y": 30.485725190839673,
+      "image_width": 2172,
+      "image_height": 724,
+      "saved_at": "2026-08-29T08:43:39.100Z"
+    },
+    "0F": {
+      "building": "체육대학관",
+      "floor": "0F",
+      "node_a": "N6",
+      "node_b": "N4",
+      "node_a_coord": [
+        163,
+        117
+      ],
+      "node_b_coord": [
+        578,
+        209
+      ],
+      "node_a_pixel": [
+        428.89,
+        286.67
+      ],
+      "node_b_pixel": [
+        1617.78,
+        560
+      ],
+      "scale_x": 2.8647951807228913,
+      "scale_y": 2.970978260869565,
+      "offset_x": -38.07161445783129,
+      "offset_y": -60.934456521739094,
+      "image_width": 2027,
+      "image_height": 776,
+      "saved_at": "2026-08-29T08:46:11.627Z"
+    },
+    "2F": {
+      "building": "체육대학관",
+      "floor": "2F",
+      "node_a": "N32",
+      "node_b": "N29",
+      "node_a_coord": [
+        255,
+        301
+      ],
+      "node_b_coord": [
+        924,
+        561
+      ],
+      "node_a_pixel": [
+        357.78,
+        448.89
+      ],
+      "node_b_pixel": [
+        1302.22,
+        804.44
+      ],
+      "scale_x": 1.4117189835575488,
+      "scale_y": 1.3675000000000002,
+      "offset_x": -2.2083408071749773,
+      "offset_y": 37.27249999999992,
+      "image_width": 1769,
+      "image_height": 889,
+      "saved_at": "2026-08-29T08:48:19.763Z"
+    },
+    "3F": {
+      "building": "체육대학관",
+      "floor": "3F",
+      "node_a": "N39",
+      "node_b": "N40",
+      "node_a_coord": [
+        239,
+        356
+      ],
+      "node_b_coord": [
+        551,
+        259
+      ],
+      "node_a_pixel": [
+        442.22,
+        620
+      ],
+      "node_b_pixel": [
+        984.44,
+        448.89
+      ],
+      "scale_x": 1.7378846153846155,
+      "scale_y": 1.7640206185567011,
+      "offset_x": 26.8655769230769,
+      "offset_y": -7.991340206185555,
+      "image_width": 1950,
+      "image_height": 807,
+      "saved_at": "2026-08-29T08:52:27.853Z"
+    },
+    "4F": {
+      "building": "체육대학관",
+      "floor": "4F",
+      "node_a": "N47",
+      "node_b": "N48",
+      "node_a_coord": [
+        251,
+        415
+      ],
+      "node_b_coord": [
+        551,
+        231
+      ],
+      "node_a_pixel": [
+        428.89,
+        695.56
+      ],
+      "node_b_pixel": [
+        935.56,
+        391.11
+      ],
+      "scale_x": 1.6888999999999998,
+      "scale_y": 1.654619565217391,
+      "offset_x": 4.976100000000031,
+      "offset_y": 8.892880434782683,
+      "image_width": 1836,
+      "image_height": 857,
+      "saved_at": "2026-08-29T08:54:18.462Z"
+    }
+  }
+}

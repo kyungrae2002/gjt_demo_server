@@ -29,5 +29,152 @@
       "image_height": 821,
       "saved_at": "2026-07-06T10:59:05.737Z"
     }
+  },
+  "생명과학대학관": {
+    "0F": {
+      "building": "생명과학대학관",
+      "floor": "0F",
+      "node_a": "N1",
+      "node_b": "N2",
+      "node_a_coord": [
+        289,
+        109
+      ],
+      "node_b_coord": [
+        709,
+        236
+      ],
+      "node_a_pixel": [
+        542.37,
+        271.19
+      ],
+      "node_b_pixel": [
+        1362.71,
+        571.19
+      ],
+      "scale_x": 1.9531904761904764,
+      "scale_y": 2.362204724409449,
+      "offset_x": -22.102047619047653,
+      "offset_y": 13.709685039370072,
+      "image_width": 1448,
+      "image_height": 1086,
+      "saved_at": "2026-08-29T11:08:08.489Z"
+    },
+    "2F": {
+      "building": "생명과학대학관",
+      "floor": "2F",
+      "node_a": "N29",
+      "node_b": "N43",
+      "node_a_coord": [
+        295,
+        221
+      ],
+      "node_b_coord": [
+        711,
+        107
+      ],
+      "node_a_pixel": [
+        703.7,
+        527.78
+      ],
+      "node_b_pixel": [
+        1712.96,
+        253.7
+      ],
+      "scale_x": 2.426105769230769,
+      "scale_y": 2.404210526315789,
+      "offset_x": -12.001201923076792,
+      "offset_y": -3.550526315789398,
+      "image_width": 1774,
+      "image_height": 887,
+      "saved_at": "2026-08-29T11:10:49.976Z"
+    },
+    "3F": {
+      "building": "생명과학대학관",
+      "floor": "3F",
+      "node_a": "N46",
+      "node_b": "N58",
+      "node_a_coord": [
+        293,
+        210
+      ],
+      "node_b_coord": [
+        715,
+        104
+      ],
+      "node_a_pixel": [
+        706,
+        532
+      ],
+      "node_b_pixel": [
+        1714,
+        266
+      ],
+      "scale_x": 2.3886255924170614,
+      "scale_y": 2.509433962264151,
+      "offset_x": 6.132701421801016,
+      "offset_y": 5.018867924528308,
+      "image_width": 1774,
+      "image_height": 887,
+      "saved_at": "2026-08-29T11:12:22.469Z"
+    },
+    "4F": {
+      "building": "생명과학대학관",
+      "floor": "4F",
+      "node_a": "N61",
+      "node_b": "N73",
+      "node_a_coord": [
+        295,
+        222
+      ],
+      "node_b_coord": [
+        717,
+        113
+      ],
+      "node_a_pixel": [
+        692.31,
+        528.85
+      ],
+      "node_b_pixel": [
+        1705.77,
+        265.38
+      ],
+      "scale_x": 2.401563981042654,
+      "scale_y": 2.4171559633027524,
+      "offset_x": -16.151374407583035,
+      "offset_y": -7.75862385321102,
+      "image_width": 1774,
+      "image_height": 887,
+      "saved_at": "2026-08-29T11:13:56.005Z"
+    },
+    "5F": {
+      "building": "생명과학대학관",
+      "floor": "5F",
+      "node_a": "N76",
+      "node_b": "N82",
+      "node_a_coord": [
+        93,
+        41
+      ],
+      "node_b_coord": [
+        695,
+        175
+      ],
+      "node_a_pixel": [
+        228.85,
+        107.69
+      ],
+      "node_b_pixel": [
+        1780.77,
+        425
+      ],
+      "scale_x": 2.5779401993355484,
+      "scale_y": 2.3679850746268656,
+      "offset_x": -10.898438538205994,
+      "offset_y": 10.602611940298516,
+      "image_width": 1896,
+      "image_height": 829,
+      "saved_at": "2026-08-29T11:14:57.934Z"
+    }
   }
 }

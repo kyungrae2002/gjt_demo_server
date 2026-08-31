@@ -1,0 +1,149 @@
+{
+  "외국어대학관": {
+    "1F": {
+      "building": "외국어대학관",
+      "floor": "1F",
+      "node_a": "N1",
+      "node_b": "N10",
+      "node_a_coord": [
+        157,
+        362
+      ],
+      "node_b_coord": [
+        1203,
+        123
+      ],
+      "node_a_pixel": [
+        143.33,
+        418.33
+      ],
+      "node_b_pixel": [
+        1270,
+        155
+      ],
+      "scale_x": 1.0771223709369027,
+      "scale_y": 1.1017991631799162,
+      "offset_x": -25.778212237093697,
+      "offset_y": 19.47870292887029,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T09:16:39.059Z"
+    },
+    "2F": {
+      "building": "외국어대학관",
+      "floor": "2F",
+      "node_a": "N13",
+      "node_b": "N18",
+      "node_a_coord": [
+        167,
+        406
+      ],
+      "node_b_coord": [
+        1201,
+        125
+      ],
+      "node_a_pixel": [
+        133.85,
+        498.46
+      ],
+      "node_b_pixel": [
+        1233.85,
+        160
+      ],
+      "scale_x": 1.0638297872340425,
+      "scale_y": 1.2044839857651244,
+      "offset_x": -43.80957446808512,
+      "offset_y": 9.439501779359489,
+      "image_width": 1619,
+      "image_height": 971,
+      "saved_at": "2026-08-29T09:26:57.371Z"
+    },
+    "3F": {
+      "building": "외국어대학관",
+      "floor": "3F",
+      "node_a": "N21",
+      "node_b": "N27",
+      "node_a_coord": [
+        162,
+        390
+      ],
+      "node_b_coord": [
+        1172,
+        127
+      ],
+      "node_a_pixel": [
+        156.67,
+        425
+      ],
+      "node_b_pixel": [
+        1203.33,
+        153.33
+      ],
+      "scale_x": 1.03629702970297,
+      "scale_y": 1.0329657794676805,
+      "offset_x": -11.21011881188116,
+      "offset_y": 22.143346007604578,
+      "image_width": 1604,
+      "image_height": 981,
+      "saved_at": "2026-08-29T09:33:32.425Z"
+    },
+    "4F": {
+      "building": "외국어대학관",
+      "floor": "4F",
+      "node_a": "N31",
+      "node_b": "N36",
+      "node_a_coord": [
+        35,
+        285
+      ],
+      "node_b_coord": [
+        994,
+        194
+      ],
+      "node_a_pixel": [
+        84.09,
+        525
+      ],
+      "node_b_pixel": [
+        1940.91,
+        384.09
+      ],
+      "scale_x": 1.936204379562044,
+      "scale_y": 1.5484615384615388,
+      "offset_x": 16.322846715328467,
+      "offset_y": 83.68846153846147,
+      "image_width": 2111,
+      "image_height": 745,
+      "saved_at": "2026-08-29T09:35:09.634Z"
+    },
+    "5F": {
+      "building": "외국어대학관",
+      "floor": "5F",
+      "node_a": "N38",
+      "node_b": "N44",
+      "node_a_coord": [
+        56,
+        367
+      ],
+      "node_b_coord": [
+        1533,
+        336
+      ],
+      "node_a_pixel": [
+        92.86,
+        490.48
+      ],
+      "node_b_pixel": [
+        2092.86,
+        454.76
+      ],
+      "scale_x": 1.3540961408259988,
+      "scale_y": 1.15225806451613,
+      "offset_x": 17.03061611374406,
+      "offset_y": 67.60129032258033,
+      "image_width": 2313,
+      "image_height": 680,
+      "saved_at": "2026-08-29T09:36:42.314Z"
+    }
+  }
+}

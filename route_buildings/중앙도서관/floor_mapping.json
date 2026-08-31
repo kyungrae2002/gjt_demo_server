@@ -2,7 +2,7 @@
   "중앙도서관": {
     "0F": {
       "building": "중앙도서관",
-      "floor": "B1F",
+      "floor": "0F",
       "node_a": "N15",
       "node_b": "N12",
       "node_a_coord": [
@@ -57,6 +57,122 @@
       "image_width": 1448,
       "image_height": 1086,
       "saved_at": "2026-07-06T11:37:34.533Z"
+    },
+    "-1F": {
+      "building": "중앙도서관",
+      "floor": "-1F",
+      "node_a": "N1",
+      "node_b": "N3",
+      "node_a_coord": [
+        100,
+        625
+      ],
+      "node_b_coord": [
+        527,
+        798
+      ],
+      "node_a_pixel": [
+        117.31,
+        567.31
+      ],
+      "node_b_pixel": [
+        490.38,
+        750
+      ],
+      "scale_x": 0.8737002341920375,
+      "scale_y": 1.056011560693642,
+      "offset_x": 29.939976580796255,
+      "offset_y": -92.69722543352634,
+      "image_width": 1914,
+      "image_height": 822,
+      "saved_at": "2026-08-29T10:21:46.321Z"
+    },
+    "2F": {
+      "building": "중앙도서관",
+      "floor": "2F",
+      "node_a": "N23",
+      "node_b": "N29",
+      "node_a_coord": [
+        523,
+        50
+      ],
+      "node_b_coord": [
+        973,
+        234
+      ],
+      "node_a_pixel": [
+        541.07,
+        117.86
+      ],
+      "node_b_pixel": [
+        1100,
+        316.07
+      ],
+      "scale_x": 1.2420666666666667,
+      "scale_y": 1.0772282608695651,
+      "offset_x": -108.53086666666661,
+      "offset_y": 63.99858695652174,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:23:53.777Z"
+    },
+    "3F": {
+      "building": "중앙도서관",
+      "floor": "3F",
+      "node_a": "N32",
+      "node_b": "N40",
+      "node_a_coord": [
+        519,
+        76
+      ],
+      "node_b_coord": [
+        959,
+        215
+      ],
+      "node_a_pixel": [
+        576.27,
+        113.56
+      ],
+      "node_b_pixel": [
+        1198.31,
+        293.22
+      ],
+      "scale_x": 1.4137272727272727,
+      "scale_y": 1.292517985611511,
+      "offset_x": -157.4544545454546,
+      "offset_y": 15.32863309352517,
+      "image_width": 1808,
+      "image_height": 870,
+      "saved_at": "2026-08-29T10:26:03.529Z"
+    },
+    "4F": {
+      "building": "중앙도서관",
+      "floor": "4F",
+      "node_a": "N42",
+      "node_b": "N48",
+      "node_a_coord": [
+        538,
+        83
+      ],
+      "node_b_coord": [
+        983,
+        297
+      ],
+      "node_a_pixel": [
+        596.61,
+        113.56
+      ],
+      "node_b_pixel": [
+        1093.22,
+        344.07
+      ],
+      "scale_x": 1.1159775280898876,
+      "scale_y": 1.0771495327102802,
+      "offset_x": -3.7859101123594883,
+      "offset_y": 24.156588785046736,
+      "image_width": 1619,
+      "image_height": 971,
+      "saved_at": "2026-08-29T10:27:22.370Z"
     }
   }
 }

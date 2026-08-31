@@ -28,6 +28,180 @@
       "image_width": 1254,
       "image_height": 1254,
       "saved_at": "2026-07-06T11:53:36.979Z"
+    },
+    "4F": {
+      "building": "학생회관",
+      "floor": "4F",
+      "node_a": "N51",
+      "node_b": "N46",
+      "node_a_coord": [
+        265,
+        205
+      ],
+      "node_b_coord": [
+        725,
+        819
+      ],
+      "node_a_pixel": [
+        280,
+        160
+      ],
+      "node_b_pixel": [
+        773.33,
+        885
+      ],
+      "scale_x": 1.0724565217391304,
+      "scale_y": 1.1807817589576548,
+      "offset_x": -4.200978260869533,
+      "offset_y": -82.06026058631923,
+      "image_width": 1576,
+      "image_height": 998,
+      "saved_at": "2026-08-29T10:45:37.887Z"
+    },
+    "2F": {
+      "building": "학생회관",
+      "floor": "2F",
+      "node_a": "N30",
+      "node_b": "N22",
+      "node_a_coord": [
+        521,
+        247
+      ],
+      "node_b_coord": [
+        1294,
+        697
+      ],
+      "node_a_pixel": [
+        606.67,
+        268.33
+      ],
+      "node_b_pixel": [
+        1470,
+        765
+      ],
+      "scale_x": 1.116856403622251,
+      "scale_y": 1.103711111111111,
+      "offset_x": 24.78781371280718,
+      "offset_y": -4.286644444444448,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:31:34.888Z"
+    },
+    "3F": {
+      "building": "학생회관",
+      "floor": "3F",
+      "node_a": "N43",
+      "node_b": "N37",
+      "node_a_coord": [
+        514,
+        273
+      ],
+      "node_b_coord": [
+        1253,
+        400
+      ],
+      "node_a_pixel": [
+        606.67,
+        268.33
+      ],
+      "node_b_pixel": [
+        1423.33,
+        461.67
+      ],
+      "scale_x": 1.1050879566982408,
+      "scale_y": 1.5223622047244096,
+      "offset_x": 38.654790257104196,
+      "offset_y": -147.27488188976383,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:33:25.322Z"
+    },
+    "5F": {
+      "building": "학생회관",
+      "floor": "5F",
+      "node_a": "N60",
+      "node_b": "N55",
+      "node_a_coord": [
+        265,
+        205
+      ],
+      "node_b_coord": [
+        725,
+        819
+      ],
+      "node_a_pixel": [
+        280,
+        160
+      ],
+      "node_b_pixel": [
+        780,
+        890
+      ],
+      "scale_x": 1.0869565217391304,
+      "scale_y": 1.1889250814332248,
+      "offset_x": -8.043478260869563,
+      "offset_y": -83.72964169381109,
+      "image_width": 1576,
+      "image_height": 998,
+      "saved_at": "2026-08-29T10:46:47.240Z"
+    },
+    "6F": {
+      "building": "학생회관",
+      "floor": "6F",
+      "node_a": "N69",
+      "node_b": "N64",
+      "node_a_coord": [
+        270,
+        221
+      ],
+      "node_b_coord": [
+        694,
+        814
+      ],
+      "node_a_pixel": [
+        280,
+        160
+      ],
+      "node_b_pixel": [
+        760,
+        891.67
+      ],
+      "scale_x": 1.1320754716981132,
+      "scale_y": 1.2338448566610454,
+      "offset_x": -25.660377358490564,
+      "offset_y": -112.679713322091,
+      "image_width": 1576,
+      "image_height": 998,
+      "saved_at": "2026-08-29T10:49:27.755Z"
+    },
+    "7F": {
+      "building": "학생회관",
+      "floor": "7F",
+      "node_a": "N78",
+      "node_b": "N73",
+      "node_a_coord": [
+        259,
+        258
+      ],
+      "node_b_coord": [
+        712,
+        819
+      ],
+      "node_a_pixel": [
+        280,
+        160
+      ],
+      "node_b_pixel": [
+        716.67,
+        855
+      ],
+      "scale_x": 0.9639514348785871,
+      "scale_y": 1.2388591800356505,
+      "offset_x": 30.336578366445934,
+      "offset_y": -159.62566844919786,
+      "image_width": 1448,
+      "image_height": 1086,
+      "saved_at": "2026-08-29T10:51:40.582Z"
     }
   }
 }

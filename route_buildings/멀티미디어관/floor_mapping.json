@@ -57,6 +57,267 @@
       "image_width": 2172,
       "image_height": 724,
       "saved_at": "2026-07-06T12:14:39.617Z"
+    },
+    "-1F": {
+      "building": "멀티미디어관",
+      "floor": "-1F",
+      "node_a": "N5",
+      "node_b": "N1",
+      "node_a_coord": [
+        52,
+        135
+      ],
+      "node_b_coord": [
+        435,
+        60
+      ],
+      "node_a_pixel": [
+        154.76,
+        416.67
+      ],
+      "node_b_pixel": [
+        1309.52,
+        195.24
+      ],
+      "scale_x": 3.0150391644908616,
+      "scale_y": 2.9524,
+      "offset_x": -2.0220365535247993,
+      "offset_y": 18.096000000000004,
+      "image_width": 2317,
+      "image_height": 679,
+      "saved_at": "2026-08-29T12:37:11.864Z"
+    },
+    "0F": {
+      "building": "멀티미디어관",
+      "floor": "0F",
+      "node_a": "N16",
+      "node_b": "N12",
+      "node_a_coord": [
+        20,
+        335
+      ],
+      "node_b_coord": [
+        430,
+        265
+      ],
+      "node_a_pixel": [
+        45.76,
+        752.54
+      ],
+      "node_b_pixel": [
+        962.71,
+        594.92
+      ],
+      "scale_x": 2.2364634146341467,
+      "scale_y": 2.251714285714286,
+      "offset_x": 1.0307317073170665,
+      "offset_y": -1.7842857142857156,
+      "image_width": 1662,
+      "image_height": 946,
+      "saved_at": "2026-08-29T12:38:08.814Z"
+    },
+    "3F": {
+      "building": "멀티미디어관",
+      "floor": "3F",
+      "node_a": "N49",
+      "node_b": "N52",
+      "node_a_coord": [
+        17,
+        95
+      ],
+      "node_b_coord": [
+        428,
+        63
+      ],
+      "node_a_pixel": [
+        59.7,
+        310.45
+      ],
+      "node_b_pixel": [
+        1329.2,
+        206.19
+      ],
+      "scale_x": 3.088807785888078,
+      "scale_y": 3.2581249999999997,
+      "offset_x": 7.190267639902679,
+      "offset_y": 0.9281250000000227,
+      "image_width": 2277,
+      "image_height": 691,
+      "saved_at": "2026-08-29T12:40:09.713Z"
+    },
+    "4F": {
+      "building": "멀티미디어관",
+      "floor": "4F",
+      "node_a": "N61",
+      "node_b": "N64",
+      "node_a_coord": [
+        18,
+        116
+      ],
+      "node_b_coord": [
+        428,
+        79
+      ],
+      "node_a_pixel": [
+        58.43,
+        321.35
+      ],
+      "node_b_pixel": [
+        1200,
+        207.87
+      ],
+      "scale_x": 2.7843170731707314,
+      "scale_y": 3.0670270270270277,
+      "offset_x": 8.31229268292683,
+      "offset_y": -34.42513513513518,
+      "image_width": 2076,
+      "image_height": 758,
+      "saved_at": "2026-08-29T12:41:41.502Z"
+    },
+    "5F": {
+      "building": "멀티미디어관",
+      "floor": "5F",
+      "node_a": "N77",
+      "node_b": "N80",
+      "node_a_coord": [
+        26,
+        115
+      ],
+      "node_b_coord": [
+        433,
+        77
+      ],
+      "node_a_pixel": [
+        53.06,
+        308.16
+      ],
+      "node_b_pixel": [
+        1210.2,
+        200
+      ],
+      "scale_x": 2.8430958230958234,
+      "scale_y": 2.846315789473685,
+      "offset_x": -20.860491400491412,
+      "offset_y": -19.166315789473742,
+      "image_width": 2081,
+      "image_height": 755,
+      "saved_at": "2026-08-29T12:42:49.123Z"
+    },
+    "6F": {
+      "building": "멀티미디어관",
+      "floor": "6F",
+      "node_a": "N89",
+      "node_b": "N92",
+      "node_a_coord": [
+        16,
+        115
+      ],
+      "node_b_coord": [
+        432,
+        69
+      ],
+      "node_a_pixel": [
+        40,
+        333.33
+      ],
+      "node_b_pixel": [
+        1202.17,
+        217.39
+      ],
+      "scale_x": 2.7936778846153847,
+      "scale_y": 2.5204347826086955,
+      "offset_x": -4.698846153846155,
+      "offset_y": 43.48000000000002,
+      "image_width": 2075,
+      "image_height": 758,
+      "saved_at": "2026-08-29T12:44:01.986Z"
+    },
+    "7F": {
+      "building": "멀티미디어관",
+      "floor": "7F",
+      "node_a": "N100",
+      "node_b": "N103",
+      "node_a_coord": [
+        31,
+        117
+      ],
+      "node_b_coord": [
+        440,
+        75
+      ],
+      "node_a_pixel": [
+        54.39,
+        329.82
+      ],
+      "node_b_pixel": [
+        1230.91,
+        205.45
+      ],
+      "scale_x": 2.8765770171149145,
+      "scale_y": 2.961190476190476,
+      "offset_x": -34.78388753056235,
+      "offset_y": -16.639285714285734,
+      "image_width": 2087,
+      "image_height": 753,
+      "saved_at": "2026-08-29T12:45:23.849Z"
+    },
+    "8F": {
+      "building": "멀티미디어관",
+      "floor": "8F",
+      "node_a": "N111",
+      "node_b": "N114",
+      "node_a_coord": [
+        20,
+        115
+      ],
+      "node_b_coord": [
+        432,
+        75
+      ],
+      "node_a_pixel": [
+        58.7,
+        310.87
+      ],
+      "node_b_pixel": [
+        1222.22,
+        205.56
+      ],
+      "scale_x": 2.8240776699029126,
+      "scale_y": 2.63275,
+      "offset_x": 2.21844660194175,
+      "offset_y": 8.103749999999991,
+      "image_width": 2085,
+      "image_height": 754,
+      "saved_at": "2026-08-29T12:47:06.178Z"
+    },
+    "9F": {
+      "building": "멀티미디어관",
+      "floor": "9F",
+      "node_a": "N123",
+      "node_b": "N126",
+      "node_a_coord": [
+        28,
+        77
+      ],
+      "node_b_coord": [
+        436,
+        39
+      ],
+      "node_a_pixel": [
+        58.44,
+        263.64
+      ],
+      "node_b_pixel": [
+        1422.08,
+        137.66
+      ],
+      "scale_x": 3.342254901960784,
+      "scale_y": 3.3152631578947367,
+      "offset_x": -35.143137254901944,
+      "offset_y": 8.364736842105259,
+      "image_width": 2425,
+      "image_height": 648,
+      "saved_at": "2026-08-29T12:48:29.270Z"
     }
   }
 }

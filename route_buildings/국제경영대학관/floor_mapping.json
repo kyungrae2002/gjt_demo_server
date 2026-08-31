@@ -86,6 +86,64 @@
       "image_width": 1448,
       "image_height": 1086,
       "saved_at": "2026-07-06T12:27:15.447Z"
+    },
+    "0F": {
+      "building": "국제경영대학관",
+      "floor": "0F",
+      "node_a": "N4",
+      "node_b": "N3",
+      "node_a_coord": [
+        109,
+        211
+      ],
+      "node_b_coord": [
+        665,
+        120
+      ],
+      "node_a_pixel": [
+        257.14,
+        516.33
+      ],
+      "node_b_pixel": [
+        1559.18,
+        295.92
+      ],
+      "scale_x": 2.341798561151079,
+      "scale_y": 2.422087912087912,
+      "offset_x": 1.8839568345323414,
+      "offset_y": 5.269450549450596,
+      "image_width": 1774,
+      "image_height": 887,
+      "saved_at": "2026-08-29T11:41:28.394Z"
+    },
+    "4F": {
+      "building": "국제경영대학관",
+      "floor": "4F",
+      "node_a": "N36",
+      "node_b": "N41",
+      "node_a_coord": [
+        82,
+        77
+      ],
+      "node_b_coord": [
+        649,
+        171
+      ],
+      "node_a_pixel": [
+        212.24,
+        234.69
+      ],
+      "node_b_pixel": [
+        1569.39,
+        426.53
+      ],
+      "scale_x": 2.393562610229277,
+      "scale_y": 2.0408510638297868,
+      "offset_x": 15.967865961199294,
+      "offset_y": 77.54446808510642,
+      "image_width": 1774,
+      "image_height": 887,
+      "saved_at": "2026-08-29T11:42:21.661Z"
     }
   }
 }

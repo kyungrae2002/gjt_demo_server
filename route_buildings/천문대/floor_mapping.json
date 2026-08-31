@@ -1,0 +1,91 @@
+{
+  "천문대": {
+    "0F": {
+      "building": "천문대",
+      "floor": "0F",
+      "node_a": "N4",
+      "node_b": "N8",
+      "node_a_coord": [
+        612,
+        275
+      ],
+      "node_b_coord": [
+        319,
+        677
+      ],
+      "node_a_pixel": [
+        830.61,
+        367.35
+      ],
+      "node_b_pixel": [
+        397.96,
+        920.41
+      ],
+      "scale_x": 1.4766211604095565,
+      "scale_y": 1.375771144278607,
+      "offset_x": -73.08215017064856,
+      "offset_y": -10.987064676616853,
+      "image_width": 1254,
+      "image_height": 1254,
+      "saved_at": "2026-08-29T11:47:07.252Z"
+    },
+    "1F": {
+      "building": "천문대",
+      "floor": "1F",
+      "node_a": "N13",
+      "node_b": "N9",
+      "node_a_coord": [
+        257,
+        532
+      ],
+      "node_b_coord": [
+        552,
+        413
+      ],
+      "node_a_pixel": [
+        318.37,
+        763.27
+      ],
+      "node_b_pixel": [
+        767.35,
+        602.04
+      ],
+      "scale_x": 1.5219661016949153,
+      "scale_y": 1.354873949579832,
+      "offset_x": -72.77528813559326,
+      "offset_y": 42.47705882352932,
+      "image_width": 1254,
+      "image_height": 1254,
+      "saved_at": "2026-08-29T11:48:50.126Z"
+    },
+    "2F": {
+      "building": "천문대",
+      "floor": "2F",
+      "node_a": "N19",
+      "node_b": "N15",
+      "node_a_coord": [
+        387,
+        274
+      ],
+      "node_b_coord": [
+        555,
+        484
+      ],
+      "node_a_pixel": [
+        520.41,
+        353.06
+      ],
+      "node_b_pixel": [
+        759.18,
+        651.02
+      ],
+      "scale_x": 1.42125,
+      "scale_y": 1.4188571428571428,
+      "offset_x": -29.613749999999982,
+      "offset_y": -35.70685714285713,
+      "image_width": 1254,
+      "image_height": 1254,
+      "saved_at": "2026-08-29T11:50:32.049Z"
+    }
+  }
+}

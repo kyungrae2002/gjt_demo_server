@@ -1,0 +1,120 @@
+{
+  "우정원": {
+    "0F": {
+      "building": "우정원",
+      "floor": "0F",
+      "node_a": "N5",
+      "node_b": "N17",
+      "node_a_coord": [
+        457,
+        180
+      ],
+      "node_b_coord": [
+        727,
+        543
+      ],
+      "node_a_pixel": [
+        722,
+        294
+      ],
+      "node_b_pixel": [
+        1144,
+        890
+      ],
+      "scale_x": 1.5629629629629629,
+      "scale_y": 1.6418732782369145,
+      "offset_x": 7.725925925925935,
+      "offset_y": -1.5371900826445994,
+      "image_width": 1254,
+      "image_height": 1254,
+      "saved_at": "2026-08-29T13:11:25.316Z"
+    },
+    "1F": {
+      "building": "우정원",
+      "floor": "1F",
+      "node_a": "N28",
+      "node_b": "N34",
+      "node_a_coord": [
+        65,
+        158
+      ],
+      "node_b_coord": [
+        732,
+        564
+      ],
+      "node_a_pixel": [
+        114.29,
+        275.51
+      ],
+      "node_b_pixel": [
+        1020,
+        969.23
+      ],
+      "scale_x": 1.3578860569715143,
+      "scale_y": 1.7086699507389163,
+      "offset_x": 26.02740629685158,
+      "offset_y": 5.5401477832512,
+      "image_width": 1122,
+      "image_height": 1402,
+      "saved_at": "2026-08-29T13:20:35.076Z"
+    },
+    "2F": {
+      "building": "우정원",
+      "floor": "2F",
+      "node_a": "N52",
+      "node_b": "N64",
+      "node_a_coord": [
+        50,
+        67
+      ],
+      "node_b_coord": [
+        781,
+        652
+      ],
+      "node_a_pixel": [
+        87.5,
+        119.64
+      ],
+      "node_b_pixel": [
+        1264.29,
+        1062.5
+      ],
+      "scale_x": 1.6098358413132694,
+      "scale_y": 1.6117264957264958,
+      "offset_x": 7.008207934336525,
+      "offset_y": 11.654324786324779,
+      "image_width": 1328,
+      "image_height": 1184,
+      "saved_at": "2026-08-29T13:23:01.292Z"
+    },
+    "7F": {
+      "building": "우정원",
+      "floor": "7F",
+      "node_a": "N91",
+      "node_b": "N74",
+      "node_a_coord": [
+        53,
+        654
+      ],
+      "node_b_coord": [
+        765,
+        70
+      ],
+      "node_a_pixel": [
+        87.5,
+        1053.57
+      ],
+      "node_b_pixel": [
+        1178.57,
+        119.64
+      ],
+      "scale_x": 1.5324016853932583,
+      "scale_y": 1.599195205479452,
+      "offset_x": 6.282710674157315,
+      "offset_y": 7.6963356164383185,
+      "image_width": 1254,
+      "image_height": 1254,
+      "saved_at": "2026-08-29T13:24:35.624Z"
+    }
+  }
+}

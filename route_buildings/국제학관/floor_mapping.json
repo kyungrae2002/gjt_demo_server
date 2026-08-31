@@ -57,6 +57,93 @@
       "image_width": 1448,
       "image_height": 1086,
       "saved_at": "2026-07-06T11:13:47.173Z"
+    },
+    "0F": {
+      "building": "국제학관",
+      "floor": "0F",
+      "node_a": "N1",
+      "node_b": "N3",
+      "node_a_coord": [
+        237,
+        838
+      ],
+      "node_b_coord": [
+        645,
+        698
+      ],
+      "node_a_pixel": [
+        283.72,
+        1025.58
+      ],
+      "node_b_pixel": [
+        888.37,
+        830.23
+      ],
+      "scale_x": 1.481985294117647,
+      "scale_y": 1.3953571428571423,
+      "offset_x": -67.51051470588231,
+      "offset_y": -143.72928571428542,
+      "image_width": 1183,
+      "image_height": 1330,
+      "saved_at": "2026-08-29T12:30:19.859Z"
+    },
+    "3F": {
+      "building": "국제학관",
+      "floor": "3F",
+      "node_a": "N16",
+      "node_b": "N23",
+      "node_a_coord": [
+        151,
+        558
+      ],
+      "node_b_coord": [
+        1316,
+        452
+      ],
+      "node_a_pixel": [
+        195.35,
+        637.21
+      ],
+      "node_b_pixel": [
+        1423.26,
+        530.23
+      ],
+      "scale_x": 1.054,
+      "scale_y": 1.009245283018868,
+      "offset_x": 36.196,
+      "offset_y": 74.05113207547163,
+      "image_width": 1589,
+      "image_height": 989,
+      "saved_at": "2026-08-29T12:31:27.935Z"
+    },
+    "4F": {
+      "building": "국제학관",
+      "floor": "4F",
+      "node_a": "N24",
+      "node_b": "N30",
+      "node_a_coord": [
+        187,
+        521
+      ],
+      "node_b_coord": [
+        1289,
+        457
+      ],
+      "node_a_pixel": [
+        230.23,
+        651.16
+      ],
+      "node_b_pixel": [
+        1523.26,
+        558.14
+      ],
+      "scale_x": 1.1733484573502722,
+      "scale_y": 1.4534374999999997,
+      "offset_x": 10.813838475499097,
+      "offset_y": -106.08093749999989,
+      "image_width": 1750,
+      "image_height": 899,
+      "saved_at": "2026-08-29T12:32:37.882Z"
     }
   }
 }

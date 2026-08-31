@@ -1,0 +1,120 @@
+{
+  "선승관": {
+    "0F": {
+      "building": "선승관",
+      "floor": "0F",
+      "node_a": "N1",
+      "node_b": "N9",
+      "node_a_coord": [
+        405,
+        28
+      ],
+      "node_b_coord": [
+        161,
+        510
+      ],
+      "node_a_pixel": [
+        893.33,
+        80
+      ],
+      "node_b_pixel": [
+        348.89,
+        1126.67
+      ],
+      "scale_x": 2.231311475409836,
+      "scale_y": 2.171514522821577,
+      "offset_x": -10.351147540983675,
+      "offset_y": 19.197593360995846,
+      "image_width": 1274,
+      "image_height": 1234,
+      "saved_at": "2026-08-29T10:13:13.563Z"
+    },
+    "1F": {
+      "building": "선승관",
+      "floor": "1F",
+      "node_a": "N15",
+      "node_b": "N18",
+      "node_a_coord": [
+        144,
+        67
+      ],
+      "node_b_coord": [
+        399,
+        511
+      ],
+      "node_a_pixel": [
+        344.58,
+        122.89
+      ],
+      "node_b_pixel": [
+        967.35,
+        1218.37
+      ],
+      "scale_x": 2.442235294117647,
+      "scale_y": 2.467297297297297,
+      "offset_x": -7.101882352941175,
+      "offset_y": -42.41891891891889,
+      "image_width": 1155,
+      "image_height": 1362,
+      "saved_at": "2026-08-29T10:14:57.627Z"
+    },
+    "2F": {
+      "building": "선승관",
+      "floor": "2F",
+      "node_a": "N30",
+      "node_b": "N33",
+      "node_a_coord": [
+        163,
+        31
+      ],
+      "node_b_coord": [
+        397,
+        494
+      ],
+      "node_a_pixel": [
+        398.08,
+        67.31
+      ],
+      "node_b_pixel": [
+        1000,
+        1288.46
+      ],
+      "scale_x": 2.5723076923076924,
+      "scale_y": 2.6374730021598274,
+      "offset_x": -21.20615384615388,
+      "offset_y": -14.451663066954652,
+      "image_width": 1113,
+      "image_height": 1413,
+      "saved_at": "2026-08-29T10:16:09.185Z"
+    },
+    "3F": {
+      "building": "선승관",
+      "floor": "3F",
+      "node_a": "N43",
+      "node_b": "N45",
+      "node_a_coord": [
+        114,
+        109
+      ],
+      "node_b_coord": [
+        390,
+        495
+      ],
+      "node_a_pixel": [
+        271.15,
+        242.31
+      ],
+      "node_b_pixel": [
+        976.92,
+        1257.69
+      ],
+      "scale_x": 2.5571376811594204,
+      "scale_y": 2.630518134715026,
+      "offset_x": -20.36369565217393,
+      "offset_y": -44.416476683937844,
+      "image_width": 1114,
+      "image_height": 1412,
+      "saved_at": "2026-08-29T10:17:38.676Z"
+    }
+  }
+}

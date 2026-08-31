@@ -1,0 +1,207 @@
+{
+  "공학관": {
+    "-1F": {
+      "building": "공학관",
+      "floor": "-1F",
+      "node_a": "N2",
+      "node_b": "N3",
+      "node_a_coord": [
+        434,
+        507
+      ],
+      "node_b_coord": [
+        749,
+        505
+      ],
+      "node_a_pixel": [
+        550,
+        653.57
+      ],
+      "node_b_pixel": [
+        1001.79,
+        655.36
+      ],
+      "scale_x": 1.4342539682539681,
+      "scale_y": -0.8949999999999818,
+      "offset_x": -72.4662222222222,
+      "offset_y": 1107.334999999991,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T09:56:10.580Z"
+    },
+    "0F": {
+      "building": "공학관",
+      "floor": "0F",
+      "node_a": "N6",
+      "node_b": "N5",
+      "node_a_coord": [
+        294,
+        76
+      ],
+      "node_b_coord": [
+        725,
+        386
+      ],
+      "node_a_pixel": [
+        375.34,
+        84.93
+      ],
+      "node_b_pixel": [
+        947.46,
+        430.51
+      ],
+      "scale_x": 1.3274245939675178,
+      "scale_y": 1.114774193548387,
+      "offset_x": -14.922830626450263,
+      "offset_y": 0.20716129032258834,
+      "image_width": 1448,
+      "image_height": 1086,
+      "saved_at": "2026-08-29T10:03:37.246Z"
+    },
+    "1F": {
+      "building": "공학관",
+      "floor": "1F",
+      "node_a": "N13",
+      "node_b": "N20",
+      "node_a_coord": [
+        140,
+        114
+      ],
+      "node_b_coord": [
+        1180,
+        531
+      ],
+      "node_a_pixel": [
+        169.86,
+        146.58
+      ],
+      "node_b_pixel": [
+        1423.73,
+        615.25
+      ],
+      "scale_x": 1.2056442307692308,
+      "scale_y": 1.1239088729016786,
+      "offset_x": 1.0698076923077053,
+      "offset_y": 18.45438848920864,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:02:10.829Z"
+    },
+    "2F": {
+      "building": "공학관",
+      "floor": "2F",
+      "node_a": "N24",
+      "node_b": "N32",
+      "node_a_coord": [
+        141,
+        180
+      ],
+      "node_b_coord": [
+        1049,
+        542
+      ],
+      "node_a_pixel": [
+        177.19,
+        250.88
+      ],
+      "node_b_pixel": [
+        1417.54,
+        678.95
+      ],
+      "scale_x": 1.3660242290748899,
+      "scale_y": 1.1825138121546963,
+      "offset_x": -15.419416299559458,
+      "offset_y": 38.027513812154666,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:05:03.831Z"
+    },
+    "3F": {
+      "building": "공학관",
+      "floor": "3F",
+      "node_a": "N36",
+      "node_b": "N45",
+      "node_a_coord": [
+        85,
+        182
+      ],
+      "node_b_coord": [
+        1007,
+        547
+      ],
+      "node_a_pixel": [
+        126.32,
+        256.14
+      ],
+      "node_b_pixel": [
+        1450.88,
+        645.61
+      ],
+      "scale_x": 1.4366160520607376,
+      "scale_y": 1.067041095890411,
+      "offset_x": 4.2076355748372976,
+      "offset_y": 61.93852054794516,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:06:08.671Z"
+    },
+    "4F": {
+      "building": "공학관",
+      "floor": "4F",
+      "node_a": "N50",
+      "node_b": "N62",
+      "node_a_coord": [
+        31,
+        223
+      ],
+      "node_b_coord": [
+        1170,
+        678
+      ],
+      "node_a_pixel": [
+        38.6,
+        298.25
+      ],
+      "node_b_pixel": [
+        1521.05,
+        861.4
+      ],
+      "scale_x": 1.3015364354697103,
+      "scale_y": 1.2376923076923076,
+      "offset_x": -1.7476294995610218,
+      "offset_y": 22.244615384615372,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:07:34.641Z"
+    },
+    "5F": {
+      "building": "공학관",
+      "floor": "5F",
+      "node_a": "N64",
+      "node_b": "N70",
+      "node_a_coord": [
+        252,
+        227
+      ],
+      "node_b_coord": [
+        1010,
+        226
+      ],
+      "node_a_pixel": [
+        331.58,
+        294.74
+      ],
+      "node_b_pixel": [
+        1322.81,
+        294.74
+      ],
+      "scale_x": 1.3076912928759894,
+      "scale_y": 0,
+      "offset_x": 2.0417941952506453,
+      "offset_y": 294.74,
+      "image_width": 1672,
+      "image_height": 941,
+      "saved_at": "2026-08-29T10:09:03.754Z"
+    }
+  }
+}

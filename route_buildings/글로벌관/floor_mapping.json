@@ -28,6 +28,122 @@
       "image_width": 1024,
       "image_height": 1536,
       "saved_at": "2026-07-06T12:02:06.463Z"
+    },
+    "2F": {
+      "building": "글로벌관",
+      "floor": "2F",
+      "node_a": "N9",
+      "node_b": "N12",
+      "node_a_coord": [
+        41,
+        435
+      ],
+      "node_b_coord": [
+        204,
+        113
+      ],
+      "node_a_pixel": [
+        157.14,
+        1157.14
+      ],
+      "node_b_pixel": [
+        515,
+        395
+      ],
+      "scale_x": 2.1954601226993864,
+      "scale_y": 2.3668944099378884,
+      "offset_x": 67.12613496932515,
+      "offset_y": 127.54093167701876,
+      "image_width": 1024,
+      "image_height": 1536,
+      "saved_at": "2026-08-29T12:07:51.936Z"
+    },
+    "3F": {
+      "building": "글로벌관",
+      "floor": "3F",
+      "node_a": "N13",
+      "node_b": "N18",
+      "node_a_coord": [
+        40,
+        421
+      ],
+      "node_b_coord": [
+        197,
+        197
+      ],
+      "node_a_pixel": [
+        110,
+        1215
+      ],
+      "node_b_pixel": [
+        545,
+        475
+      ],
+      "scale_x": 2.770700636942675,
+      "scale_y": 3.3035714285714284,
+      "offset_x": -0.8280254777070013,
+      "offset_y": -175.80357142857133,
+      "image_width": 1024,
+      "image_height": 1536,
+      "saved_at": "2026-08-29T12:08:57.444Z"
+    },
+    "4F": {
+      "building": "글로벌관",
+      "floor": "4F",
+      "node_a": "N19",
+      "node_b": "N23",
+      "node_a_coord": [
+        363,
+        427
+      ],
+      "node_b_coord": [
+        444,
+        277
+      ],
+      "node_a_pixel": [
+        767.8,
+        816.95
+      ],
+      "node_b_pixel": [
+        945.76,
+        488.14
+      ],
+      "scale_x": 2.1970370370370373,
+      "scale_y": 2.1920666666666673,
+      "offset_x": -29.724444444444657,
+      "offset_y": -119.06246666666686,
+      "image_width": 1448,
+      "image_height": 1086,
+      "saved_at": "2026-08-29T12:15:56.747Z"
+    },
+    "5F": {
+      "building": "글로벌관",
+      "floor": "5F",
+      "node_a": "N24",
+      "node_b": "N33",
+      "node_a_coord": [
+        363,
+        427
+      ],
+      "node_b_coord": [
+        444,
+        277
+      ],
+      "node_a_pixel": [
+        714.81,
+        848.15
+      ],
+      "node_b_pixel": [
+        879.63,
+        583.33
+      ],
+      "scale_x": 2.0348148148148155,
+      "scale_y": 1.7654666666666663,
+      "offset_x": -23.827777777778124,
+      "offset_y": 94.29573333333349,
+      "image_width": 1409,
+      "image_height": 1116,
+      "saved_at": "2026-08-29T12:22:47.725Z"
     }
   }
 }

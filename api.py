@@ -328,7 +328,7 @@ class StaffingDecisionCreate(BaseModel):
 
 class NavigationProgressUpdate(BaseModel):
     dispatch_time: datetime
-    phase: Literal["overview", "nav"]
+    phase: Literal["overview", "nav", "completed"]
     active_schedule_id: int = Field(ge=1)
     step_index: int = Field(default=0, ge=0)
 
@@ -1794,7 +1794,7 @@ def update_navigation_progress(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """관리자 화면의 현재 건물과 스텝을 배정 작업자들에게 공유한다."""
+    """관리자 화면의 현재 위치와 완료 상태를 배정 작업자들에게 공유한다."""
     decision = _latest_staffing_decision_for_dispatch(
         db,
         current_user.organization_id,

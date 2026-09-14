@@ -228,6 +228,21 @@ class WorkTrackingApiTest(unittest.TestCase):
         self.assertEqual(worker_view["step_index"], 3)
         self.assertEqual(decision.recommendation_snapshot["basis"], "test")
 
+        completed = api.update_navigation_progress(
+            api.NavigationProgressUpdate(
+                dispatch_time=dispatch_time,
+                phase="completed",
+                active_schedule_id=schedule.id,
+                step_index=3,
+            ),
+            self.admin,
+            self.db,
+        )
+        worker_completed_view = api.get_navigation_progress(dispatch_time, self.user, self.db)
+        self.assertEqual(worker_completed_view, completed)
+        self.assertEqual(worker_completed_view["phase"], "completed")
+        self.assertEqual(worker_completed_view["revision"], 2)
+
         with self.assertRaises(api.HTTPException) as denied:
             api.get_navigation_progress(dispatch_time, unassigned, self.db)
         self.assertEqual(denied.exception.status_code, 403)

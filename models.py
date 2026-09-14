@@ -108,7 +108,7 @@ class WorkSession(Base):
     gps_sample_count    = Column(Integer, nullable=False, default=0)
     gps_rejected_count  = Column(Integer, nullable=False, default=0)
     tracking_quality    = Column(String(32), nullable=False, default="unavailable")
-    borg_cr10           = Column(Integer, nullable=True)
+    borg_cr10           = Column(Float, nullable=True)
     borg_source         = Column(String(16), nullable=True)
     predicted_borg_cr10 = Column(Float, nullable=True)
     prediction_confidence = Column(String(16), nullable=True)

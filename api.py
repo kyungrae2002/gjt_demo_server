@@ -18,11 +18,22 @@ from pydantic import BaseModel, Field
 
 from model import run_optimizer
 from model2 import run_optimizer as run_route_optimizer, split_location_to_building_room
-from fatigue_model import FEATURE_KEYS, MODEL_VERSION, fit_ridge_parameters, predict_personal_fatigue
+from fatigue_model import (
+    fatigue_decay,
+    predict_personal_fatigue,
+    recovery_half_life_for_worker,
+)
+from fatigue_dataset import (
+    MAX_DATASET_BYTES,
+    FatigueDatasetError,
+    dataset_template,
+    parse_fatigue_dataset,
+)
 from fatigue_store import (
     find_active_fatigue_model,
     save_personal_fatigue_model,
     seed_initial_fatigue_models,
+    train_fatigue_models_from_dataset,
 )
 from db import get_db, SessionLocal, engine, Base
 from models import (
@@ -89,6 +100,18 @@ try:
         connection.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_work_sessions_user_id ON work_sessions (user_id)"
         ))
+        if engine.dialect.name == "postgresql" and "work_sessions" in inspector.get_table_names():
+            work_session_columns = {
+                column["name"]: str(column["type"]).lower()
+                for column in inspector.get_columns("work_sessions")
+            }
+            borg_type = work_session_columns.get("borg_cr10", "")
+            if "double" not in borg_type and "real" not in borg_type and "float" not in borg_type:
+                connection.execute(text(
+                    "ALTER TABLE work_sessions "
+                    "ALTER COLUMN borg_cr10 TYPE DOUBLE PRECISION "
+                    "USING borg_cr10::double precision"
+                ))
 
     # 조직 기능 이전에 생성된 데이터는 기존 입장 코드 123456의 기본 조직으로 귀속한다.
     with SessionLocal() as migration_db:
@@ -282,12 +305,14 @@ class WorkSessionCreate(BaseModel):
     gps_sample_count: int = Field(default=0, ge=0)
     gps_rejected_count: int = Field(default=0, ge=0)
     tracking_quality: Literal["unavailable", "poor", "estimated"] = "unavailable"
-    borg_cr10: Optional[int] = Field(default=None, ge=0, le=10)
+    borg_cr10: Optional[float] = Field(default=None, ge=0, le=10)
     team_size: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class FatiguePredictionRequest(BaseModel):
     schedule_ids: List[int] = Field(default_factory=list)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     total_seconds: int = Field(ge=0)
     work_seconds: Optional[int] = Field(default=None, ge=0)
     driving_seconds: int = Field(default=0, ge=0)
@@ -299,6 +324,13 @@ class StaffingDecisionCreate(BaseModel):
     dispatch_time: datetime
     schedule_ids: List[int]
     selected_workers: List[str]
+
+
+class NavigationProgressUpdate(BaseModel):
+    dispatch_time: datetime
+    phase: Literal["overview", "nav"]
+    active_schedule_id: int = Field(ge=1)
+    step_index: int = Field(default=0, ge=0)
 
 
 # ==========================================
@@ -1066,6 +1098,9 @@ def _fatigue_history(current_user: User, db: Session) -> list[dict]:
             db=db,
         )
         history.append({
+            "worker_name": row.worker_name,
+            "started_at": row.started_at,
+            "completed_at": row.completed_at,
             "features": features,
             "borg_cr10": row.borg_cr10,
             "predicted_borg_cr10": row.predicted_borg_cr10,
@@ -1094,13 +1129,82 @@ def _predict_fatigue(
         current_user.id,
         current_user.full_name,
     )
+    history = _fatigue_history(current_user, db)
+    requested_start = getattr(body, "started_at", None)
+    requested_completion = getattr(body, "completed_at", None)
+    if requested_start is not None:
+        current_started_at = _kst_naive(requested_start)
+    else:
+        completed_at = (
+            _kst_naive(requested_completion)
+            if requested_completion is not None
+            else _kst_naive(now_kst())
+        )
+        current_started_at = completed_at - timedelta(seconds=body.total_seconds)
     result = predict_personal_fatigue(
-        _fatigue_history(current_user, db),
+        history,
         features,
         fallback_parameters=stored_model.parameters if stored_model else None,
         fallback_model_version=stored_model.model_version if stored_model else None,
+        current_started_at=current_started_at,
+        worker_name=current_user.full_name,
     )
+    features["cumulative_fatigue"] = result["cumulative_fatigue"]
+    features["recovered_daily_load"] = result["recovered_daily_load"]
+    features["recovery_minutes"] = result["recovery_minutes"]
+    features["recovery_half_life_minutes"] = result["recovery_half_life_minutes"]
+    features["recovery_rate_per_minute"] = result["recovery_rate_per_minute"]
     return result, features
+
+
+@app.get("/fatigue/dataset-template")
+def get_fatigue_dataset_template(
+    current_user: User = Depends(require_admin),
+):
+    """관리자용 사전 학습 데이터셋의 열·단위·별칭 규칙을 반환한다."""
+    return dataset_template()
+
+
+@app.post("/fatigue/train-dataset")
+async def train_fatigue_dataset(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """CSV·JSON·XLSX 업로드 즉시 조직 공통 및 작업자 개인 모델을 학습한다.
+
+    ``worker_name``별 데이터가 3행 이상이면 개인 모델도 생성한다. 가입된 작업자와
+    이름이 같으면 사용자 ID에 연결하고, 아직 가입 전이면 이름 기반으로 저장한다.
+    업로드 목표 Borg는 사전 데이터이므로 실제 설문 횟수에는 포함하지 않는다.
+    """
+    filename = file.filename or "dataset"
+    content = await file.read(MAX_DATASET_BYTES + 1)
+    try:
+        parsed = parse_fatigue_dataset(filename, content)
+        training = train_fatigue_models_from_dataset(
+            db,
+            current_user.organization_id,
+            parsed["samples"],
+        )
+    except FatigueDatasetError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return {
+        "status": "trained",
+        "filename": Path(filename).name,
+        "row_count": parsed["row_count"],
+        "source_row_count": parsed.get("source_row_count", parsed["row_count"]),
+        "dataset_format": parsed.get("dataset_format", "generic"),
+        "aggregation": parsed.get("aggregation"),
+        "recognized_columns": parsed["recognized_columns"],
+        "ignored_columns": parsed["ignored_columns"],
+        **training,
+    }
 
 
 @app.post("/fatigue/predict")
@@ -1200,7 +1304,11 @@ def create_work_session(
     db.commit()
     db.refresh(row)
     history = _fatigue_history(current_user, db)
-    readiness = predict_personal_fatigue(history, feature_snapshot)
+    readiness = predict_personal_fatigue(
+        history,
+        feature_snapshot,
+        worker_name=current_user.full_name,
+    )
     save_personal_fatigue_model(db, current_user, history, readiness)
     return _work_session_to_dict(row)
 
@@ -1229,6 +1337,7 @@ def _today_worker_summaries(db: Session, organization_id: int) -> list[dict]:
     today = today_kst()
     start = datetime(today.year, today.month, today.day)
     end = start + timedelta(days=1)
+    reference_time = _kst_naive(now_kst())
     all_rows = (
         db.query(WorkSession)
         .filter(WorkSession.organization_id == organization_id)
@@ -1279,6 +1388,11 @@ def _today_worker_summaries(db: Session, organization_id: int) -> list[dict]:
             "total_work_seconds": 0,
             "measured_work_session_count": 0,
             "daily_load": 0.0,
+            "cumulative_fatigue": 0.0,
+            "recovery_minutes": 0.0,
+            "recovery_half_life_minutes": recovery_half_life_for_worker(worker_name),
+            "recovery_minutes_since_latest": None,
+            "recovery_applied": False,
             "latest_borg_cr10": None,
             "latest_borg_source": None,
             "latest_actual_borg_cr10": None,
@@ -1314,6 +1428,9 @@ def _today_worker_summaries(db: Session, organization_id: int) -> list[dict]:
             db=db,
         )
         history_by_name[row.worker_name].append({
+            "worker_name": row.worker_name,
+            "started_at": row.started_at,
+            "completed_at": row.completed_at,
             "features": features,
             "borg_cr10": row.borg_cr10,
             "predicted_borg_cr10": row.predicted_borg_cr10,
@@ -1338,8 +1455,6 @@ def _today_worker_summaries(db: Session, organization_id: int) -> list[dict]:
         if effective_borg is not None:
             summary["latest_borg_cr10"] = round(float(effective_borg), 1)
             summary["latest_borg_source"] = "user" if row.borg_cr10 is not None else "predicted"
-            if row.work_seconds is not None:
-                summary["daily_load"] += (row.work_seconds / 60.0) * float(effective_borg)
         summary["latest_completed_at"] = row.completed_at
 
     result = []
@@ -1358,16 +1473,35 @@ def _today_worker_summaries(db: Session, organization_id: int) -> list[dict]:
             latest_features,
             fallback_parameters=stored_model.parameters if stored_model else None,
             fallback_model_version=stored_model.model_version if stored_model else None,
+            current_started_at=reference_time,
+            worker_name=summary["worker_name"],
         )
         summary["model_ready"] = readiness["model_ready"]
         summary["survey_required"] = readiness["survey_required"]
         summary["actual_response_count"] = readiness["actual_response_count"]
         summary["validation_mae"] = readiness["validation_mae"]
-        summary["daily_load"] = round(summary["daily_load"], 1)
+        summary["cumulative_fatigue"] = round(readiness["cumulative_fatigue"], 3)
+        summary["daily_load"] = round(readiness["cumulative_fatigue"], 3)
+        summary["recovery_minutes"] = round(readiness["recovery_minutes"], 1)
+        summary["recovery_half_life_minutes"] = readiness["recovery_half_life_minutes"]
         summary["model_source"] = stored_model.source if stored_model else None
 
         if summary["session_count"] > 0 and summary["latest_borg_cr10"] is not None:
-            summary["state_borg_cr10"] = summary["latest_borg_cr10"]
+            latest_completed_at = summary["latest_completed_at"]
+            elapsed_minutes = max(
+                0.0,
+                (reference_time - latest_completed_at).total_seconds() / 60.0,
+            )
+            summary["recovery_minutes_since_latest"] = round(elapsed_minutes, 1)
+            summary["recovery_applied"] = elapsed_minutes > 0
+            summary["state_borg_cr10"] = round(
+                fatigue_decay(
+                    summary["latest_borg_cr10"],
+                    elapsed_minutes,
+                    readiness["recovery_half_life_minutes"],
+                ),
+                1,
+            )
             summary["state_source"] = (
                 "actual_today" if summary["latest_borg_source"] == "user" else "predicted_today"
             )
@@ -1483,7 +1617,7 @@ def _staffing_proposals(db: Session, organization_id: int) -> list[dict]:
             status = summaries.get(name)
             if status:
                 reason = (
-                    f"오늘 누적부하 {status['daily_load']:.1f}, "
+                    f"누적피로도 {status['cumulative_fatigue']:.3f}, "
                     f"상태 Borg {status['state_borg_cr10'] if status['state_borg_cr10'] is not None else '데이터 없음'}"
                     f"({status['state_source']})"
                 )
@@ -1510,7 +1644,7 @@ def _staffing_proposals(db: Session, organization_id: int) -> list[dict]:
             "recommended_workers": recommended,
             "worker_details": details,
             "confirmed_workers": last_decision.selected_workers if last_decision else [],
-            "basis": "실제 Borg 우선, 미응답 시 개인화 예상 Borg와 당일 작업시간을 사용한 참고안",
+            "basis": "실제 Borg 우선, 미응답 시 개인화 예상 Borg와 당일 이전 출동을 개인 회복계수로 감쇠한 누적피로도를 사용한 참고안",
         })
     return proposals
 
@@ -1598,6 +1732,95 @@ def confirm_staffing_recommendation(
         "confirmed_at": decision.confirmed_at,
         "message": "관리자 확정이 반영되었습니다.",
     }
+
+
+def _latest_staffing_decision_for_dispatch(
+    db: Session,
+    organization_id: int,
+    dispatch_time: datetime,
+) -> Optional[StaffingDecision]:
+    return (
+        db.query(StaffingDecision)
+        .filter(
+            StaffingDecision.organization_id == organization_id,
+            StaffingDecision.dispatch_time == _kst_naive(dispatch_time),
+        )
+        .order_by(StaffingDecision.id.desc())
+        .first()
+    )
+
+
+def _navigation_progress_from_decision(decision: StaffingDecision) -> dict:
+    schedule_ids = [int(schedule_id) for schedule_id in (decision.schedule_ids or [])]
+    snapshot = decision.recommendation_snapshot if isinstance(decision.recommendation_snapshot, dict) else {}
+    stored = snapshot.get("navigation_progress")
+    if isinstance(stored, dict) and stored.get("active_schedule_id") in schedule_ids:
+        return stored
+    return {
+        "dispatch_time": decision.dispatch_time.isoformat(),
+        "phase": "overview",
+        "active_schedule_id": schedule_ids[0] if schedule_ids else None,
+        "step_index": 0,
+        "revision": 0,
+        "updated_at": decision.confirmed_at.isoformat() if decision.confirmed_at else None,
+        "controller_user_id": decision.confirmed_by_user_id,
+    }
+
+
+@app.get("/navigation/progress")
+def get_navigation_progress(
+    dispatch_time: datetime,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """배정된 출동의 관리자 네비게이션 위치를 관리자와 작업자에게 반환한다."""
+    decision = _latest_staffing_decision_for_dispatch(
+        db,
+        current_user.organization_id,
+        dispatch_time,
+    )
+    if decision is None:
+        raise HTTPException(status_code=404, detail="확정된 출동을 찾을 수 없습니다.")
+    if current_user.role == "worker":
+        selected = {str(name).strip() for name in (decision.selected_workers or [])}
+        if current_user.full_name.strip() not in selected:
+            raise HTTPException(status_code=403, detail="배정된 출동의 네비게이션만 볼 수 있습니다.")
+    return _navigation_progress_from_decision(decision)
+
+
+@app.put("/navigation/progress")
+def update_navigation_progress(
+    body: NavigationProgressUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자 화면의 현재 건물과 스텝을 배정 작업자들에게 공유한다."""
+    decision = _latest_staffing_decision_for_dispatch(
+        db,
+        current_user.organization_id,
+        body.dispatch_time,
+    )
+    if decision is None:
+        raise HTTPException(status_code=404, detail="확정된 출동을 찾을 수 없습니다.")
+    schedule_ids = {int(schedule_id) for schedule_id in (decision.schedule_ids or [])}
+    if body.active_schedule_id not in schedule_ids:
+        raise HTTPException(status_code=422, detail="해당 출동에 포함되지 않은 일정입니다.")
+
+    previous = _navigation_progress_from_decision(decision)
+    progress = {
+        "dispatch_time": decision.dispatch_time.isoformat(),
+        "phase": body.phase,
+        "active_schedule_id": body.active_schedule_id,
+        "step_index": body.step_index,
+        "revision": int(previous.get("revision") or 0) + 1,
+        "updated_at": now_kst().replace(tzinfo=None).isoformat(),
+        "controller_user_id": current_user.id,
+    }
+    snapshot = decision.recommendation_snapshot if isinstance(decision.recommendation_snapshot, dict) else {}
+    decision.recommendation_snapshot = {**snapshot, "navigation_progress": progress}
+    db.commit()
+    db.refresh(decision)
+    return progress
 
 
 def _calculate_dispatch_routes(rows: list[Schedule], 투입인원수: Optional[int] = None) -> dict:

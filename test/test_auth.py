@@ -99,6 +99,7 @@ class AuthApiTest(unittest.TestCase):
         )
         self.assertEqual(logged_in.status_code, 200)
         self.assertEqual(logged_in.json()["token_type"], "bearer")
+        self.assertEqual(logged_in.json()["expires_in"], 8 * 60 * 60)
         self.assertTrue(logged_in.json()["access_token"].startswith("v1."))
         token = logged_in.json()["access_token"]
 

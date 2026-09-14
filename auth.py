@@ -29,11 +29,16 @@ from models import FatigueModel, Organization, User, WorkSession
 router = APIRouter(prefix="/auth", tags=["인증"])
 _bearer = HTTPBearer(auto_error=False)
 
-ACCESS_TOKEN_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "60"))
+# 현장 출동이 한 시간을 넘겨도 완료 기록을 저장할 수 있도록 근무일 단위로 유지한다.
+ACCESS_TOKEN_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "480"))
 PASSWORD_RESET_MINUTES = int(os.getenv("PASSWORD_RESET_MINUTES", "15"))
-RETURN_RESET_TOKEN = os.getenv("PASSWORD_RESET_RETURN_TOKEN", "").strip().lower() in {
-    "1", "true", "t", "yes", "y", "on",
-}
+
+
+def _return_reset_token_enabled() -> bool:
+    """실행 중 테스트/배포 설정 변경도 반영해 재설정 토큰 반환 여부를 판단한다."""
+    return os.getenv("PASSWORD_RESET_RETURN_TOKEN", "").strip().lower() in {
+        "1", "true", "t", "yes", "y", "on",
+    }
 
 _configured_secret = os.getenv("AUTH_SECRET_KEY") or os.getenv("API_KEY")
 if _configured_secret:
@@ -444,7 +449,9 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     response_model_exclude_none=True,
 )
 def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    if not _smtp_is_configured() and not RETURN_RESET_TOKEN:
+    return_reset_token = _return_reset_token_enabled()
+    send_email = _smtp_is_configured() and not return_reset_token
+    if not send_email and not return_reset_token:
         raise HTTPException(
             status_code=503,
             detail="비밀번호 재설정 메일 발송 설정이 필요합니다.",
@@ -460,7 +467,7 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user.reset_token_expires_at = _utcnow() + timedelta(minutes=PASSWORD_RESET_MINUTES)
     db.commit()
 
-    if _smtp_is_configured():
+    if send_email:
         try:
             _send_reset_email(user, token)
         except (OSError, smtplib.SMTPException) as exc:
@@ -471,7 +478,7 @@ def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
 
     return ForgotPasswordResponse(
         message=generic_message,
-        reset_token=token if RETURN_RESET_TOKEN else None,
+        reset_token=token if return_reset_token else None,
     )
 
 

@@ -979,7 +979,7 @@ def schedules_today(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """오늘(출동일시 기준) 수거 일정. 시간대별 렌더링은 프론트에서."""
+    """오늘(출동일시 기준) 미완료 수거 일정. 시간대별 렌더링은 프론트에서."""
     today = today_kst()
     start = datetime(today.year, today.month, today.day)
     end   = start + timedelta(days=1)
@@ -993,6 +993,13 @@ def schedules_today(
         .order_by(Schedule.출동일시)
         .all()
     )
+    completed_application_numbers = {
+        number for number, in db.query(Application.신청번호).filter(
+            Application.organization_id == current_user.organization_id,
+            Application.상태 == "완료",
+        ).all()
+    }
+    rows = [row for row in rows if row.신청번호 not in completed_application_numbers]
     decisions = _latest_staffing_decisions_for_range(
         db, current_user.organization_id, start, end
     )
@@ -1818,6 +1825,18 @@ def update_navigation_progress(
     }
     snapshot = decision.recommendation_snapshot if isinstance(decision.recommendation_snapshot, dict) else {}
     decision.recommendation_snapshot = {**snapshot, "navigation_progress": progress}
+    if body.phase == "completed":
+        application_numbers = {
+            number for number, in db.query(Schedule.신청번호).filter(
+                Schedule.organization_id == current_user.organization_id,
+                Schedule.id.in_(schedule_ids),
+            ).all()
+        }
+        if application_numbers:
+            db.query(Application).filter(
+                Application.organization_id == current_user.organization_id,
+                Application.신청번호.in_(application_numbers),
+            ).update({Application.상태: "완료"}, synchronize_session=False)
     db.commit()
     db.refresh(decision)
     return progress

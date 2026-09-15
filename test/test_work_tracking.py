@@ -32,7 +32,7 @@ from fatigue_model import (  # noqa: E402
     recovery_minutes_since_previous,
     with_recovery_features,
 )
-from models import Base, FatigueModel, Organization, Schedule, StaffingDecision, User, WorkSession  # noqa: E402
+from models import Application, Base, FatigueModel, Organization, Schedule, StaffingDecision, User, WorkSession  # noqa: E402
 from worker_personalization import provision_personalized_workers  # noqa: E402
 
 
@@ -187,6 +187,12 @@ class WorkTrackingApiTest(unittest.TestCase):
             품명="책상",
             설치장소="공학관 101호",
         )
+        application = Application(
+            organization_id=self.organization.id,
+            신청번호="NAV-1",
+            물품목록=[],
+            상태="일정확정",
+        )
         unassigned = User(
             username="unassigned-worker",
             email="unassigned@example.com",
@@ -195,7 +201,7 @@ class WorkTrackingApiTest(unittest.TestCase):
             organization_id=self.organization.id,
             role="worker",
         )
-        self.db.add_all([schedule, unassigned])
+        self.db.add_all([schedule, application, unassigned])
         self.db.flush()
         decision = StaffingDecision(
             organization_id=self.organization.id,
@@ -242,6 +248,9 @@ class WorkTrackingApiTest(unittest.TestCase):
         self.assertEqual(worker_completed_view, completed)
         self.assertEqual(worker_completed_view["phase"], "completed")
         self.assertEqual(worker_completed_view["revision"], 2)
+        self.assertEqual(self.db.get(Application, application.id).상태, "완료")
+        self.assertEqual(api.schedules_today(self.admin, self.db), [])
+        self.assertEqual(api.schedules_today(self.user, self.db), [])
 
         with self.assertRaises(api.HTTPException) as denied:
             api.get_navigation_progress(dispatch_time, unassigned, self.db)

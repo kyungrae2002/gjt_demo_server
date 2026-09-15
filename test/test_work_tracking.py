@@ -4,6 +4,7 @@ import unittest
 from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import UploadFile
 from sqlalchemy import create_engine
@@ -164,19 +165,23 @@ class WorkTrackingApiTest(unittest.TestCase):
         self.assertEqual(self.db.query(StaffingDecision).count(), 0)
 
         selected = ["이작업", "박작업"]
-        result = api.confirm_staffing_recommendation(
-            api.StaffingDecisionCreate(
+        route_result = [{"건물명": "공학관", "경로": ["101호"]}]
+        with patch.object(api, "run_route_optimizer", return_value=route_result) as optimizer:
+            body = api.StaffingDecisionCreate(
                 dispatch_time=dispatch_time,
                 schedule_ids=[schedule.id],
                 selected_workers=selected,
-            ),
-            self.admin,
-            self.db,
-        )
+            )
+            result = api.confirm_staffing_recommendation(body, self.admin, self.db)
+            repeated = api.confirm_staffing_recommendation(body, self.admin, self.db)
 
         self.assertEqual(result["selected_workers"], selected)
-        self.assertEqual(self.db.query(StaffingDecision).count(), 1)
-        self.assertFalse(self.db.get(Schedule, schedule.id).출동확정)
+        self.assertEqual(repeated["selected_workers"], selected)
+        self.assertEqual(self.db.query(StaffingDecision).count(), 2)
+        self.assertEqual(optimizer.call_count, 2)
+        self.assertEqual(result["route_optimization"]["확정_일정수"], 1)
+        self.assertEqual(repeated["route_optimization"]["확정_일정수"], 1)
+        self.assertTrue(self.db.get(Schedule, schedule.id).출동확정)
 
     def test_admin_navigation_progress_is_shared_only_with_assigned_workers(self):
         dispatch_time = datetime(2026, 8, 19, 14, 0)

@@ -1729,6 +1729,10 @@ def confirm_staffing_recommendation(
         confirmed_at=now_kst().replace(tzinfo=None),
     )
     db.add(decision)
+    # 최초 확정뿐 아니라 이미 확정된 출동을 다시 확정할 때도 선택 인원 수를
+    # 기준으로 동선을 새로 계산한다. 인원 확정과 동선 저장을 같은 트랜잭션으로
+    # 처리해 둘 중 하나만 반영되는 상태를 만들지 않는다.
+    route_optimization = _calculate_dispatch_routes(rows, len(selected_workers))
     db.commit()
     db.refresh(decision)
     return {
@@ -1737,6 +1741,7 @@ def confirm_staffing_recommendation(
         "schedule_ids": decision.schedule_ids,
         "selected_workers": decision.selected_workers,
         "confirmed_at": decision.confirmed_at,
+        "route_optimization": route_optimization,
         "message": "관리자 확정이 반영되었습니다.",
     }
 
